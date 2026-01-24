@@ -53,11 +53,36 @@ public class Tms9900Isa
             case 0x02: // LI - Load Immediate
                 ExecuteLI(instruction);
                 break;
-            case 0x04: // AI - Add Immediate
-                ExecuteAI(instruction);
+            case 0x03: // Check for RTWP and other 0x03xx instructions
+                if ((instruction & 0xFFC0) == 0x0380)
+                    _cpu.ReturnFromContext();
+                else if ((instruction & 0xFFC0) == 0x03C0)
+                    ExecuteBLWP(instruction);
+                else
+                    DecodeExtendedOps(instruction);
                 break;
-            case 0x06: // ANDI - AND Immediate
-                ExecuteANDI(instruction);
+            case 0x04: // AI - Add Immediate or CLR/NEG/INV/INC
+                if ((instruction & 0xFF00) == 0x0400)
+                {
+                    // Check if this is AI or single-operand instruction
+                    if ((instruction & 0x00F0) == 0)
+                        ExecuteAI(instruction);
+                    else
+                        DecodeExtendedOps(instruction);
+                }
+                else
+                {
+                    DecodeExtendedOps(instruction);
+                }
+                break;
+            case 0x05: // INCT, DEC, DECT, BL
+                DecodeExtendedOps(instruction);
+                break;
+            case 0x06: // ANDI - AND Immediate or SWPB/SETO/ABS
+                if ((instruction & 0xFF00) == 0x0600)
+                    ExecuteANDI(instruction);
+                else
+                    DecodeExtendedOps(instruction);
                 break;
             case 0x08: // ORI - OR Immediate
                 ExecuteORI(instruction);
