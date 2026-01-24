@@ -65,4 +65,53 @@ public class Tms9900MemoryTests
         
         Assert.Equal((ushort)0x0000, memory.ReadWord(0x1000));
     }
+
+    [Fact]
+    public void ReadWord_ShouldThrowForAddressAtEndOfMemory()
+    {
+        var memory = new Tms9900Memory();
+        
+        Assert.Throws<ArgumentOutOfRangeException>(() => memory.ReadWord(0xFFFF));
+    }
+
+    [Fact]
+    public void WriteWord_ShouldThrowForAddressAtEndOfMemory()
+    {
+        var memory = new Tms9900Memory();
+        
+        Assert.Throws<ArgumentOutOfRangeException>(() => memory.WriteWord(0xFFFF, 0x1234));
+    }
+
+    [Fact]
+    public void LoadProgram_ShouldThrowForProgramExceedingMemory()
+    {
+        var memory = new Tms9900Memory();
+        byte[] program = new byte[100];
+        
+        Assert.Throws<ArgumentOutOfRangeException>(() => memory.LoadProgram(0xFFFF, program));
+    }
+
+    [Fact]
+    public void LoadProgram_ShouldThrowForNullProgram()
+    {
+        var memory = new Tms9900Memory();
+        
+        Assert.Throws<ArgumentNullException>(() => memory.LoadProgram(0x1000, null!));
+    }
+
+    [Fact]
+    public void GetMemoryDump_ShouldThrowForDumpExceedingMemory()
+    {
+        var memory = new Tms9900Memory();
+        
+        Assert.Throws<ArgumentOutOfRangeException>(() => memory.GetMemoryDump(0xFFFF, 100));
+    }
+
+    [Fact]
+    public void GetMemoryDump_ShouldThrowForNegativeLength()
+    {
+        var memory = new Tms9900Memory();
+        
+        Assert.Throws<ArgumentOutOfRangeException>(() => memory.GetMemoryDump(0x1000, -1));
+    }
 }
