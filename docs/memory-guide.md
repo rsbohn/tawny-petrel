@@ -80,17 +80,14 @@ memory.LoadProgram(0x0100, program);
 
 The interactive monitor supports a simple dump command:
 
-- `d <addr>`: shows 16 words starting at `addr` (hex input)
+- `x <addr>`: shows 16 words starting at `addr` (octal input)
 
 Example:
 ```
-> d 0100
-Memory at 0x0100:
-  0100: 0200
-  0102: 0005
-  0104: 0C03
-  0106: 0000
-  ...
+> x 0100
+Memory at 0o0100:
+  000100: 000200 170001 170002 170003 170004 170005 170006 170007
+  000120: ...
 ```
 
 ## Safety Checks
@@ -107,7 +104,25 @@ These checks prevent accidental overflows and out-of-range reads.
 
 - Use even addresses for word access to match TMS9900 conventions.
 - Always set reset vectors before calling `cpu.Reset()`.
-- Use `d <addr>` to verify program bytes after loading.
+- Use `x <addr> [size]` to verify program bytes after loading.
+
+## Tawny Petrel Memory Map
+
+Tawny Petrel Memory Map (64K words, addresses in octal):
+000000-000003: Reset vectors (WP, PC)
+000004-000077: Interrupt vectors (levels 0-14, 4 bytes each)
+000100-000177: XOP vectors (XOP 0-15, 4 bytes each)
+000200-000237: Monitor variables (16 words)
+000240-000257: Monitor data stack (8 words)
+000260-000277: Monitor workspace (16 words, R0-R15)
+000300-167777: General RAM (user code and data)
+170000-177776: Memory-mapped I/O (reserved for peripherals)
+MMIO devices:
+
+170000 (>F000): UART status register (THRE bit 0)
+170002 (>F002): UART data register
+
+User code by convention starts at 000300.
 
 ## Additional Resources
 

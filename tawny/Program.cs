@@ -12,6 +12,7 @@ class Program
         // Initialize the simulator
         var memory = new Tms9900Memory();
         var cpu = new Tms9900Cpu(memory);
+        InitializeMonitorStack(memory);
 
         // Interactive mode
         Console.WriteLine("===========================================");
@@ -26,6 +27,8 @@ class Program
         Console.WriteLine("  dep <addr> <val...> - Alias for d");
         Console.WriteLine("  demo       - Run the demo program");
         Console.WriteLine("  regs       - Show all registers");
+        Console.WriteLine("  . dup drop swap over + - and or xor invert @ !");
+        Console.WriteLine("  help       - Show this help");
         Console.WriteLine("  q          - Quit");
         Console.WriteLine();
 
@@ -146,8 +149,31 @@ class Program
                     }
                     break;
 
+                case ".":
+                case "dup":
+                case "drop":
+                case "swap":
+                case "over":
+                case "+":
+                case "-":
+                case "and":
+                case "or":
+                case "xor":
+                case "invert":
+                case "@":
+                case "!":
+                    if (!ExecuteStackExpression(parts, memory))
+                    {
+                        Console.WriteLine("Stack error.");
+                    }
+                    break;
+
                 case "demo":
                     RunDemo(memory, cpu);
+                    break;
+
+                case "help":
+                    PrintHelp();
                     break;
 
                 case "regs":
@@ -166,13 +192,32 @@ class Program
                     break;
 
                 default:
-                    Console.WriteLine("Unknown command. Type 'q' to quit.");
+                    if (!ExecuteStackExpression(parts, memory))
+                    {
+                        Console.WriteLine("Unknown command. Type 'q' to quit.");
+                    }
                     break;
             }
         }
 
         Console.WriteLine();
         Console.WriteLine("Goodbye!");
+    }
+
+    static void PrintHelp()
+    {
+        Console.WriteLine("Commands:");
+        Console.WriteLine("  s          - Execute single step");
+        Console.WriteLine("  r          - Reset CPU");
+        Console.WriteLine("  x <addr> [n]   - Examine memory at address (octal)");
+        Console.WriteLine("  exam <addr> - Alias for x");
+        Console.WriteLine("  d <addr> <val...> - Deposit words into memory (octal)");
+        Console.WriteLine("  dep <addr> <val...> - Alias for d");
+        Console.WriteLine("  demo       - Run the demo program");
+        Console.WriteLine("  regs       - Show all registers");
+        Console.WriteLine("  . dup drop swap over + - and or xor invert @ !");
+        Console.WriteLine("  help       - Show this help");
+        Console.WriteLine("  q          - Quit");
     }
 
     static void RunDemo(Tms9900Memory memory, Tms9900Cpu cpu)
@@ -248,6 +293,159 @@ class Program
         bool success = (r0 == 0x0005 && r1 == 0x0003 && r2 == 0xFFFF && r3 == 0x2000);
         Console.WriteLine(success ? "✓ Test passed!" : "✗ Test failed!");
         Console.WriteLine();
+    }
+
+    static void InitializeMonitorStack(Tms9900Memory memory)
+    {
+        memory.WriteWord(0x0200, 0x0240); // data stack base
+        memory.WriteWord(0x0202, 0x0000); // data stack offset (0-7)
+    }
+
+    static bool ExecuteStackExpression(string[] parts, Tms9900Memory memory)
+    {
+        foreach (string token in parts)
+        {
+            if (TryParseLiteral(token, out ushort literal))
+            {
+                if (!PushStack(memory, literal)) return false;
+                continue;
+            }
+
+            switch (token.ToLower())
+            {
+                case ".":
+                    if (!PopStack(memory, out ushort value)) return false;
+                    Console.WriteLine(FormatOctal(value));
+                    break;
+                case "dup":
+                    if (!PeekStack(memory, out ushort top)) return false;
+                    if (!PushStack(memory, top)) return false;
+                    break;
+                case "drop":
+                    if (!PopStack(memory, out _)) return false;
+                    break;
+                case "swap":
+                    if (!PopStack(memory, out ushort a)) return false;
+                    if (!PopStack(memory, out ushort b)) return false;
+                    if (!PushStack(memory, a)) return false;
+                    if (!PushStack(memory, b)) return false;
+                    break;
+                case "over":
+                    if (!PopStack(memory, out ushort first)) return false;
+                    if (!PopStack(memory, out ushort second)) return false;
+                    if (!PushStack(memory, second)) return false;
+                    if (!PushStack(memory, first)) return false;
+                    if (!PushStack(memory, second)) return false;
+                    break;
+                case "+":
+                    if (!PopStack(memory, out ushort addB)) return false;
+                    if (!PopStack(memory, out ushort addA)) return false;
+                    if (!PushStack(memory, (ushort)(addA + addB))) return false;
+                    break;
+                case "-":
+                    if (!PopStack(memory, out ushort subB)) return false;
+                    if (!PopStack(memory, out ushort subA)) return false;
+                    if (!PushStack(memory, (ushort)(subA - subB))) return false;
+                    break;
+                case "and":
+                    if (!PopStack(memory, out ushort andB)) return false;
+                    if (!PopStack(memory, out ushort andA)) return false;
+                    if (!PushStack(memory, (ushort)(andA & andB))) return false;
+                    break;
+                case "or":
+                    if (!PopStack(memory, out ushort orB)) return false;
+                    if (!PopStack(memory, out ushort orA)) return false;
+                    if (!PushStack(memory, (ushort)(orA | orB))) return false;
+                    break;
+                case "xor":
+                    if (!PopStack(memory, out ushort xorB)) return false;
+                    if (!PopStack(memory, out ushort xorA)) return false;
+                    if (!PushStack(memory, (ushort)(xorA ^ xorB))) return false;
+                    break;
+                case "invert":
+                    if (!PopStack(memory, out ushort invA)) return false;
+                    if (!PushStack(memory, (ushort)~invA)) return false;
+                    break;
+                case "@":
+                    if (!PopStack(memory, out ushort addr)) return false;
+                    if (!PushStack(memory, memory.ReadWord((ushort)(addr & 0xFFFE)))) return false;
+                    break;
+                case "!":
+                    if (!PopStack(memory, out ushort storeAddr)) return false;
+                    if (!PopStack(memory, out ushort storeValue)) return false;
+                    memory.WriteWord((ushort)(storeAddr & 0xFFFE), storeValue);
+                    break;
+                default:
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    static bool TryParseLiteral(string token, out ushort value)
+    {
+        value = 0;
+        if (string.IsNullOrWhiteSpace(token)) return false;
+
+        char prefix = token[0];
+        string digits = token;
+        if (prefix == '#' || prefix == '$' || prefix == '>')
+        {
+            digits = token.Substring(1);
+        }
+
+        if (string.IsNullOrWhiteSpace(digits)) return false;
+
+        if (prefix == '#')
+        {
+            return ushort.TryParse(digits, out value);
+        }
+
+        if (prefix == '$' || prefix == '>')
+        {
+            return ushort.TryParse(digits, System.Globalization.NumberStyles.HexNumber, null, out value);
+        }
+
+        return TryParseOctalUShort(token, out value);
+    }
+
+    static bool PushStack(Tms9900Memory memory, ushort value)
+    {
+        ushort baseAddr = memory.ReadWord(0x0200);
+        ushort offset = memory.ReadWord(0x0202);
+        if (offset > 7) return false;
+
+        ushort addr = (ushort)(baseAddr + (offset * 2));
+        memory.WriteWord(addr, value);
+        memory.WriteWord(0x0202, (ushort)(offset + 1));
+        return true;
+    }
+
+    static bool PopStack(Tms9900Memory memory, out ushort value)
+    {
+        value = 0;
+        ushort offset = memory.ReadWord(0x0202);
+        if (offset == 0) return false;
+
+        offset--;
+        ushort baseAddr = memory.ReadWord(0x0200);
+        ushort addr = (ushort)(baseAddr + (offset * 2));
+        value = memory.ReadWord(addr);
+        memory.WriteWord(0x0202, offset);
+        return true;
+    }
+
+    static bool PeekStack(Tms9900Memory memory, out ushort value)
+    {
+        value = 0;
+        ushort offset = memory.ReadWord(0x0202);
+        if (offset == 0) return false;
+
+        ushort baseAddr = memory.ReadWord(0x0200);
+        ushort addr = (ushort)(baseAddr + ((offset - 1) * 2));
+        value = memory.ReadWord(addr);
+        return true;
     }
 
     static bool TryParseOctalUShort(string text, out ushort value)

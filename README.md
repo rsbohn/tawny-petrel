@@ -6,3 +6,6 @@ TMS9900 minicomputer emulator
 Following the design philosophy of the Petrel family (Ashen Petrel for HP 3000, Dusky Petrel for DG Nova, and Olive Petrel for PDP-8), Tawny Petrel features a Forth-inspired monitor system that emphasizes direct interaction with the machine. The monitor provides immediate access to memory examination and modification, register inspection, single-stepping, and program execution control. This approach prioritizes programmer productivity and learning over strict historical accuracy, making the TMS9900 architecture accessible and enjoyable to explore.
 
 The simulator is built as a development and experimentation platform for the TMS9900 architecture, supporting the full instruction set including the distinctive workspace pointer mechanism that uses memory locations as registers, the XOP extended operation system for software-implemented instructions and system calls, and memory mapping capabilities. Tawny Petrel aims to be both a practical tool for Usagi Electric community members to develop and test code, and an educational resource for understanding this historically significant 16-bit processor architecture.
+
+
+[Usagi on Github](https://github.com/Nakazoto/TMS9900-Homebrew)
