@@ -43,14 +43,14 @@ Instruction Set Architecture with:
 ## Building
 
 ```bash
-cd TawnyPetrel
+cd tawny
 dotnet build
 ```
 
 ## Running
 
 ```bash
-cd TawnyPetrel
+cd tawny
 dotnet run
 ```
 
@@ -65,7 +65,7 @@ The simulator will run a demo program and then enter interactive mode with the f
 ## Testing
 
 ```bash
-cd TawnyPetrel.Tests
+cd tawny.Tests
 dotnet test
 ```
 

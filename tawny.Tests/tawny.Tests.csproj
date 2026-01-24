@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\TawnyPetrel\TawnyPetrel.csproj" />
+    <ProjectReference Include="..\tawny\tawny.csproj" />
   </ItemGroup>
 
 </Project>

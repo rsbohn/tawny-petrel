@@ -1,7 +1,7 @@
 using Xunit;
-using TawnyPetrel;
+using tawny;
 
-namespace TawnyPetrel.Tests;
+namespace tawny.Tests;
 
 public class Tms9900IsaTests
 {

@@ -1,4 +1,4 @@
-﻿namespace TawnyPetrel;
+﻿namespace tawny;
 
 class Program
 {

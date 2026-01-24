@@ -1,4 +1,4 @@
-namespace TawnyPetrel;
+namespace tawny;
 
 /// <summary>
 /// Represents the memory system for the TMS9900 processor.

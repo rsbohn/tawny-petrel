@@ -1,4 +1,4 @@
-namespace TawnyPetrel;
+namespace tawny;
 
 /// <summary>
 /// Implements the TMS9900 instruction set architecture.

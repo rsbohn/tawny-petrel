@@ -1,4 +1,4 @@
-namespace TawnyPetrel;
+namespace tawny;
 
 /// <summary>
 /// Represents the TMS9900 CPU with workspace pointer architecture.

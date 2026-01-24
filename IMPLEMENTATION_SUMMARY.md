@@ -178,17 +178,17 @@ The BLWP and XOP instructions provide hardware-assisted context switching:
 
 ```
 tawny-petrel/
-├── TawnyPetrel/
+├── tawny/
 │   ├── Tms9900Memory.cs     - Memory subsystem
 │   ├── Tms9900Cpu.cs        - CPU implementation
 │   ├── Tms9900Isa.cs        - Instruction set
 │   ├── Program.cs           - Main entry point
-│   └── TawnyPetrel.csproj   - Project file
-├── TawnyPetrel.Tests/
+│   └── tawny.csproj   - Project file
+├── tawny.Tests/
 │   ├── Tms9900MemoryTests.cs
 │   ├── Tms9900CpuTests.cs
 │   ├── Tms9900IsaTests.cs
-│   └── TawnyPetrel.Tests.csproj
+│   └── tawny.Tests.csproj
 ├── README.md                - User documentation
 └── IMPLEMENTATION_SUMMARY.md - This file
 ```
@@ -197,14 +197,14 @@ tawny-petrel/
 
 ```bash
 # Build
-cd TawnyPetrel
+cd tawny
 dotnet build
 
 # Run simulator
 dotnet run
 
 # Run tests
-cd ../TawnyPetrel.Tests
+cd ../tawny.Tests
 dotnet test
 ```
 
