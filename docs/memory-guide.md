@@ -80,15 +80,16 @@ memory.LoadProgram(0x0100, program);
 
 The interactive monitor supports a simple dump command:
 
-- `x <addr>`: shows 16 words starting at `addr` (hexadecimal input)
+- `x <addr>`: shows 16 words starting at `addr` (monitor uses octal input)
 
-Example:
+Example (to examine memory at address 0x0100):
 ```
-> x 0100
-Memory at 0x0100:
-  0x0100: 000200 170001 170002 170003 170004 170005 170006 170007
-  0x0110: ...
+> x 400
+Memory at 0o000400:
+  000400: 000200 170001 170002 170003 170004 170005 170006 170007
+  000420: ...
 ```
+Note: The monitor uses octal for input/output, but this guide documents addresses in hexadecimal. Address 0x0100 (hex) = 0o000400 (octal).
 
 ## Safety Checks
 
