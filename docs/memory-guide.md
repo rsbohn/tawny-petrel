@@ -80,15 +80,16 @@ memory.LoadProgram(0x0100, program);
 
 The interactive monitor supports a simple dump command:
 
-- `x <addr>`: shows 16 words starting at `addr` (octal input)
+- `x <addr>`: shows 16 words starting at `addr` (monitor uses octal input)
 
-Example:
+Example (to examine memory at address 0x0100):
 ```
-> x 0100
-Memory at 0o0100:
-  000100: 000200 170001 170002 170003 170004 170005 170006 170007
-  000120: ...
+> x 400
+Memory at 0o000400:
+  000400: 000000 000000 000000 000000 000000 000000 000000 000000
+  000420: ...
 ```
+Note: The monitor uses octal for input/output, but this guide documents addresses in hexadecimal. Address 0x0100 (hex) = 0o000400 (octal).
 
 ## Safety Checks
 
@@ -108,21 +109,21 @@ These checks prevent accidental overflows and out-of-range reads.
 
 ## Tawny Petrel Memory Map
 
-Tawny Petrel Memory Map (64K words, addresses in octal):
-000000-000003: Reset vectors (WP, PC)
-000004-000077: Interrupt vectors (levels 0-14, 4 bytes each)
-000100-000177: XOP vectors (XOP 0-15, 4 bytes each)
-000200-000237: Monitor variables (16 words)
-000240-000257: Monitor data stack (8 words)
-000260-000277: Monitor workspace (16 words, R0-R15)
-000300-167777: General RAM (user code and data)
-170000-177776: Memory-mapped I/O (reserved for peripherals)
+Tawny Petrel Memory Map (64K words, addresses in hexadecimal):
+0x0000-0x0003: Reset vectors (WP, PC)
+0x0004-0x003F: Interrupt vectors (levels 0-14, 4 bytes each)
+0x0040-0x007F: XOP vectors (XOP 0-15, 4 bytes each)
+0x0080-0x009F: Monitor variables (16 words)
+0x00A0-0x00AF: Monitor data stack (8 words)
+0x00B0-0x00BF: Monitor workspace (16 words, R0-R15)
+0x00C0-0xEFFF: General RAM (user code and data)
+0xF000-0xFFFE: Memory-mapped I/O (reserved for peripherals)
 MMIO devices:
 
-170000 (>F000): UART status register (THRE bit 0)
-170002 (>F002): UART data register
+0xF000 (>F000): UART status register (THRE bit 0)
+0xF002 (>F002): UART data register
 
-User code by convention starts at 000300.
+**Note**: General RAM starts at 0x00C0, but user code by convention starts at 0x0100 (providing a small buffer area for potential future use).
 
 ## Additional Resources
 
