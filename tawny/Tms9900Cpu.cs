@@ -1,3 +1,5 @@
+using System.Threading;
+
 namespace tawny;
 
 /// <summary>
@@ -13,6 +15,8 @@ public class Tms9900Cpu
     private ushort _workspacePointer; // WP - Points to 16-word register workspace in memory
     private ushort _programCounter;   // PC - Current instruction address
     private ushort _statusRegister;   // ST - Status flags and interrupt mask
+    private bool _isIdle;
+    private int _pendingInterruptLevel = -1;
 
     // Status register bit positions
     private const int LGT_BIT = 0x8000; // Logical Greater Than
@@ -24,6 +28,7 @@ public class Tms9900Cpu
     private const int X_BIT = 0x0200;   // Extended operation
 
     public bool IsRunning { get; private set; }
+    public bool IsIdle => _isIdle;
 
     public ushort WorkspacePointer => _workspacePointer;
     public ushort ProgramCounter => _programCounter;
@@ -46,6 +51,8 @@ public class Tms9900Cpu
         _programCounter = _memory.ReadWord(0x0002);
         _statusRegister = 0;
         IsRunning = false;
+        _isIdle = false;
+        _pendingInterruptLevel = -1;
     }
 
     /// <summary>
@@ -54,6 +61,7 @@ public class Tms9900Cpu
     public void Start()
     {
         IsRunning = true;
+        _isIdle = false;
     }
 
     /// <summary>
@@ -62,6 +70,16 @@ public class Tms9900Cpu
     public void Stop()
     {
         IsRunning = false;
+        _isIdle = false;
+    }
+
+    /// <summary>
+    /// Enter idle state until an interrupt occurs.
+    /// </summary>
+    public void EnterIdle()
+    {
+        _isIdle = true;
+        IsRunning = true;
     }
 
     /// <summary>
@@ -70,6 +88,16 @@ public class Tms9900Cpu
     public void Step()
     {
         if (!IsRunning) return;
+
+        if (TryServiceInterrupt())
+        {
+            return;
+        }
+
+        if (_isIdle)
+        {
+            return;
+        }
 
         ushort instruction = _memory.ReadWord(_programCounter);
         _programCounter += 2;
@@ -85,6 +113,11 @@ public class Tms9900Cpu
         int count = 0;
         while (IsRunning && (cycles < 0 || count < cycles))
         {
+            if (_isIdle && !HasPendingInterrupt())
+            {
+                Thread.Sleep(1);
+                continue;
+            }
             Step();
             count++;
         }
@@ -197,6 +230,25 @@ public class Tms9900Cpu
     }
 
     /// <summary>
+    /// Set the interrupt mask (0-15).
+    /// </summary>
+    public void SetInterruptMask(int level)
+    {
+        if (level < 0 || level > 15)
+            throw new ArgumentOutOfRangeException(nameof(level), "Interrupt mask must be 0-15.");
+
+        _statusRegister = (ushort)((_statusRegister & 0xFFF0) | (ushort)level);
+    }
+
+    /// <summary>
+    /// Get the interrupt mask (0-15).
+    /// </summary>
+    public int GetInterruptMask()
+    {
+        return _statusRegister & 0xF;
+    }
+
+    /// <summary>
     /// Get the carry flag.
     /// </summary>
     public bool GetCarry()
@@ -271,6 +323,50 @@ public class Tms9900Cpu
         _statusRegister = oldST;
         _programCounter = oldPC;
         _workspacePointer = oldWP;
+    }
+
+    /// <summary>
+    /// Trigger an interrupt by level (0-15).
+    /// </summary>
+    public void TriggerInterrupt(int level)
+    {
+        if (level < 0 || level > 15)
+            throw new ArgumentOutOfRangeException(nameof(level), "Interrupt level must be 0-15.");
+
+        if (_pendingInterruptLevel < 0 || level < _pendingInterruptLevel)
+        {
+            _pendingInterruptLevel = level;
+        }
+    }
+
+    private bool HasPendingInterrupt()
+    {
+        return _pendingInterruptLevel >= 0 && _pendingInterruptLevel <= GetInterruptMask();
+    }
+
+    private bool TryServiceInterrupt()
+    {
+        if (_pendingInterruptLevel < 0)
+        {
+            return false;
+        }
+
+        int level = _pendingInterruptLevel;
+        if (level > GetInterruptMask())
+        {
+            return false;
+        }
+
+        _pendingInterruptLevel = -1;
+
+        ushort vectorAddress = (ushort)(level * 4);
+        ushort newWP = _memory.ReadWord(vectorAddress);
+        ushort newPC = _memory.ReadWord((ushort)(vectorAddress + 2));
+
+        ContextSwitch(newWP, newPC);
+        _isIdle = false;
+        IsRunning = true;
+        return true;
     }
 
     /// <summary>

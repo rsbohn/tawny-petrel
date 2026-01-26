@@ -8,8 +8,12 @@ public class Tms9900Memory
 {
     private readonly byte[] _memory;
     private const int MemorySize = 0x10000; // 64KB address space
-    private const ushort UartStatusAddress = 0xF000;
-    private const ushort UartDataAddress = 0xF002;
+    private const ushort UartTxStatusAddress = 0xF000; // THRE
+    private const ushort UartTxDataAddress = 0xF002; // THRL
+    private const ushort UartRxDataAddress = 0xF004; // RRD
+    private const ushort UartRxResetAddress = 0xF006; // DRR
+    private byte _uartRxByte;
+    private bool _uartRxAvailable;
 
     public Tms9900Memory()
     {
@@ -25,7 +29,15 @@ public class Tms9900Memory
             throw new ArgumentOutOfRangeException(nameof(address), 
                 $"Address 0x{address:X4} is too close to end of memory for word access");
 
-        if (address == UartStatusAddress)
+        if (address == UartTxStatusAddress)
+        {
+            return 0x0001;
+        }
+        if (address == UartRxDataAddress)
+        {
+            return _uartRxAvailable ? _uartRxByte : (ushort)0x0000;
+        }
+        if (address == UartRxResetAddress)
         {
             return 0x0000;
         }
@@ -43,10 +55,16 @@ public class Tms9900Memory
             throw new ArgumentOutOfRangeException(nameof(address), 
                 $"Address 0x{address:X4} is too close to end of memory for word access");
         
-        if (address == UartDataAddress)
+        if (address == UartTxDataAddress)
         {
             Console.Write((char)(value & 0x00FF));
             Console.Out.Flush();
+            return;
+        }
+        if (address == UartRxResetAddress)
+        {
+            _uartRxAvailable = false;
+            return;
         }
 
         _memory[address] = (byte)(value >> 8);
@@ -60,7 +78,15 @@ public class Tms9900Memory
     public byte ReadByte(ushort address)
     {
         // No bounds check needed: ushort max (0xFFFF = 65535) is always < MemorySize (0x10000 = 65536)
-        if (address == UartStatusAddress)
+        if (address == UartTxStatusAddress)
+        {
+            return 0x01;
+        }
+        if (address == UartRxDataAddress)
+        {
+            return _uartRxAvailable ? _uartRxByte : (byte)0x00;
+        }
+        if (address == UartRxResetAddress)
         {
             return 0x00;
         }
@@ -74,12 +100,27 @@ public class Tms9900Memory
     public void WriteByte(ushort address, byte value)
     {
         // No bounds check needed: ushort max (0xFFFF = 65535) is always < MemorySize (0x10000 = 65536)
-        if (address == UartDataAddress)
+        if (address == UartTxDataAddress)
         {
             Console.Write((char)value);
             Console.Out.Flush();
+            return;
+        }
+        if (address == UartRxResetAddress)
+        {
+            _uartRxAvailable = false;
+            return;
         }
         _memory[address] = value;
+    }
+
+    /// <summary>
+    /// Inject a received UART byte into the RX data register.
+    /// </summary>
+    public void ReceiveUartByte(byte value)
+    {
+        _uartRxByte = value;
+        _uartRxAvailable = true;
     }
 
     /// <summary>

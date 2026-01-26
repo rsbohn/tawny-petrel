@@ -77,6 +77,11 @@ public class Tms9900Isa
             ExecuteCI(instruction);
             return;
         }
+        if ((instruction & 0xFFF0) == 0x0300)
+        {
+            ExecuteLIMI(instruction);
+            return;
+        }
         if ((instruction & 0xFFF0) == 0x0C00)
         {
             ExecuteSTWP(instruction);
@@ -239,6 +244,10 @@ public class Tms9900Isa
         {
             ExecuteXOP(instruction);
         }
+        else if ((instruction & 0xFFC0) == 0x0340) // IDLE
+        {
+            ExecuteIDLE();
+        }
         else if ((instruction & 0xFFC0) == 0x0380) // RTWP
         {
             _cpu.ReturnFromContext();
@@ -345,6 +354,12 @@ public class Tms9900Isa
         _cpu.UpdateStatusFlags(result);
     }
 
+    private void ExecuteLIMI(ushort instruction)
+    {
+        int mask = instruction & 0xF;
+        _cpu.SetInterruptMask(mask);
+    }
+
     private void ExecuteSTWP(ushort instruction)
     {
         int reg = instruction & 0xF;
@@ -381,50 +396,104 @@ public class Tms9900Isa
 
     private void ExecuteSZC(ushort instruction, bool isByte)
     {
-        // Simplified implementation - would need full addressing mode support
-        int src = (instruction >> 6) & 0xF;
-        int dest = instruction & 0xF;
-        ushort srcVal = _cpu.ReadRegister(src);
-        ushort destVal = _cpu.ReadRegister(dest);
-        ushort result = (ushort)(destVal & ~srcVal);
-        _cpu.WriteRegister(dest, result);
-        _cpu.UpdateStatusFlags(result);
+        (OperandReference src, OperandReference dest) = ResolveRegDestOperands(instruction, isByte);
+
+        if (isByte)
+        {
+            byte srcVal = ReadByte(src);
+            byte destVal = ReadByte(dest);
+            byte result = (byte)(destVal & (byte)~srcVal);
+            WriteByte(dest, result);
+            _cpu.UpdateStatusFlagsByte(result);
+        }
+        else
+        {
+            ushort srcVal = ReadWord(src);
+            ushort destVal = ReadWord(dest);
+            ushort result = (ushort)(destVal & ~srcVal);
+            WriteWord(dest, result);
+            _cpu.UpdateStatusFlags(result);
+        }
+
+        ApplyAutoIncrementSingle(src);
     }
 
     private void ExecuteS(ushort instruction, bool isByte)
     {
-        int src = (instruction >> 6) & 0xF;
-        int dest = instruction & 0xF;
-        ushort srcVal = _cpu.ReadRegister(src);
-        ushort destVal = _cpu.ReadRegister(dest);
-        int result = destVal - srcVal;
-        _cpu.WriteRegister(dest, (ushort)result);
-        _cpu.UpdateStatusFlags(result);
-        _cpu.SetCarry(result >= 0);
-        _cpu.SetOverflow(((destVal ^ srcVal) & (destVal ^ result) & 0x8000) != 0);
+        (OperandReference src, OperandReference dest) = ResolveRegDestOperands(instruction, isByte);
+
+        if (isByte)
+        {
+            byte srcVal = ReadByte(src);
+            byte destVal = ReadByte(dest);
+            int result = destVal - srcVal;
+            WriteByte(dest, (byte)result);
+            _cpu.UpdateStatusFlagsByte((byte)result);
+            _cpu.SetCarry(result >= 0);
+            _cpu.SetOverflow(((destVal ^ srcVal) & (destVal ^ result) & 0x80) != 0);
+        }
+        else
+        {
+            ushort srcVal = ReadWord(src);
+            ushort destVal = ReadWord(dest);
+            int result = destVal - srcVal;
+            WriteWord(dest, (ushort)result);
+            _cpu.UpdateStatusFlags(result);
+            _cpu.SetCarry(result >= 0);
+            _cpu.SetOverflow(((destVal ^ srcVal) & (destVal ^ result) & 0x8000) != 0);
+        }
+
+        ApplyAutoIncrementSingle(src);
     }
 
     private void ExecuteC(ushort instruction, bool isByte)
     {
-        int src = (instruction >> 6) & 0xF;
-        int dest = instruction & 0xF;
-        ushort srcVal = _cpu.ReadRegister(src);
-        ushort destVal = _cpu.ReadRegister(dest);
-        int result = destVal - srcVal;
-        _cpu.UpdateStatusFlags(result);
+        (OperandReference src, OperandReference dest) = ResolveRegDestOperands(instruction, isByte);
+
+        if (isByte)
+        {
+            byte srcVal = ReadByte(src);
+            byte destVal = ReadByte(dest);
+            int result = destVal - srcVal;
+            _cpu.UpdateStatusFlagsByte((byte)result);
+        }
+        else
+        {
+            ushort srcVal = ReadWord(src);
+            ushort destVal = ReadWord(dest);
+            int result = destVal - srcVal;
+            _cpu.UpdateStatusFlags(result);
+        }
+
+        ApplyAutoIncrementSingle(src);
     }
 
     private void ExecuteA(ushort instruction, bool isByte)
     {
-        int src = (instruction >> 6) & 0xF;
-        int dest = instruction & 0xF;
-        ushort srcVal = _cpu.ReadRegister(src);
-        ushort destVal = _cpu.ReadRegister(dest);
-        int result = destVal + srcVal;
-        _cpu.WriteRegister(dest, (ushort)result);
-        _cpu.UpdateStatusFlags(result);
-        _cpu.SetCarry(result > 0xFFFF);
-        _cpu.SetOverflow(((destVal ^ result) & (srcVal ^ result) & 0x8000) != 0);
+        (OperandReference src, OperandReference dest) = ResolveRegDestOperands(instruction, isByte);
+
+        if (isByte)
+        {
+            byte srcVal = ReadByte(src);
+            byte destVal = ReadByte(dest);
+            int result = destVal + srcVal;
+            WriteByte(dest, (byte)result);
+            _cpu.UpdateStatusFlagsByte((byte)result);
+            _cpu.SetCarry(result > 0xFF);
+            _cpu.SetOverflow(((destVal ^ result) & (srcVal ^ result) & 0x80) != 0);
+        }
+        else
+        {
+            ushort srcVal = ReadWord(src);
+            ushort destVal = ReadWord(dest);
+            int result = destVal + srcVal;
+            WriteWord(dest, (ushort)result);
+            _cpu.UpdateStatusFlags(result);
+            _cpu.SetCarry(result > 0xFFFF);
+            _cpu.SetOverflow(((destVal ^ result) & (srcVal ^ result) & 0x8000) != 0);
+        }
+
+        ApplyAutoIncrementSingle(src);
     }
 
     private void ExecuteMOV(ushort instruction, bool isByte)
@@ -575,13 +644,26 @@ public class Tms9900Isa
 
     private void ExecuteSOC(ushort instruction, bool isByte)
     {
-        int src = (instruction >> 6) & 0xF;
-        int dest = instruction & 0xF;
-        ushort srcVal = _cpu.ReadRegister(src);
-        ushort destVal = _cpu.ReadRegister(dest);
-        ushort result = (ushort)(destVal | srcVal);
-        _cpu.WriteRegister(dest, result);
-        _cpu.UpdateStatusFlags(result);
+        (OperandReference src, OperandReference dest) = ResolveRegDestOperands(instruction, isByte);
+
+        if (isByte)
+        {
+            byte srcVal = ReadByte(src);
+            byte destVal = ReadByte(dest);
+            byte result = (byte)(destVal | srcVal);
+            WriteByte(dest, result);
+            _cpu.UpdateStatusFlagsByte(result);
+        }
+        else
+        {
+            ushort srcVal = ReadWord(src);
+            ushort destVal = ReadWord(dest);
+            ushort result = (ushort)(destVal | srcVal);
+            WriteWord(dest, result);
+            _cpu.UpdateStatusFlags(result);
+        }
+
+        ApplyAutoIncrementSingle(src);
     }
 
     private void ExecuteSLA(ushort instruction)
@@ -666,78 +748,88 @@ public class Tms9900Isa
 
     private void ExecuteBLWP(ushort instruction)
     {
-        int reg = instruction & 0xF;
-        ushort address = _cpu.ReadRegister(reg);
+        OperandReference operand = ResolveSingleOperand(instruction, false);
+        ushort address = operand.Kind == OperandKind.Register
+            ? _cpu.ReadRegister(operand.Register)
+            : operand.Address;
         ushort newWP = _memory.ReadWord(address);
         ushort newPC = _memory.ReadWord((ushort)(address + 2));
         _cpu.ContextSwitch(newWP, newPC);
+        ApplyAutoIncrementSingle(operand);
     }
 
     private void ExecuteCLR(ushort instruction)
     {
-        int reg = instruction & 0xF;
-        _cpu.WriteRegister(reg, 0);
+        OperandReference operand = ResolveSingleOperand(instruction, false);
+        WriteWord(operand, 0);
+        ApplyAutoIncrementSingle(operand);
     }
 
     private void ExecuteNEG(ushort instruction)
     {
-        int reg = instruction & 0xF;
-        ushort value = _cpu.ReadRegister(reg);
+        OperandReference operand = ResolveSingleOperand(instruction, false);
+        ushort value = ReadWord(operand);
         int result = -(short)value;
-        _cpu.WriteRegister(reg, (ushort)result);
+        WriteWord(operand, (ushort)result);
         _cpu.UpdateStatusFlags(result);
         _cpu.SetOverflow(value == 0x8000);
+        ApplyAutoIncrementSingle(operand);
     }
 
     private void ExecuteINV(ushort instruction)
     {
-        int reg = instruction & 0xF;
-        ushort value = _cpu.ReadRegister(reg);
+        OperandReference operand = ResolveSingleOperand(instruction, false);
+        ushort value = ReadWord(operand);
         ushort result = (ushort)~value;
-        _cpu.WriteRegister(reg, result);
+        WriteWord(operand, result);
         _cpu.UpdateStatusFlags(result);
+        ApplyAutoIncrementSingle(operand);
     }
 
     private void ExecuteINC(ushort instruction)
     {
-        int reg = instruction & 0xF;
-        ushort value = _cpu.ReadRegister(reg);
+        OperandReference operand = ResolveSingleOperand(instruction, false);
+        ushort value = ReadWord(operand);
         int result = value + 1;
-        _cpu.WriteRegister(reg, (ushort)result);
+        WriteWord(operand, (ushort)result);
         _cpu.UpdateStatusFlags(result);
         _cpu.SetCarry(result > 0xFFFF);
         _cpu.SetOverflow(value == 0x7FFF);
+        ApplyAutoIncrementSingle(operand);
     }
 
     private void ExecuteINCT(ushort instruction)
     {
-        int reg = instruction & 0xF;
-        ushort value = _cpu.ReadRegister(reg);
+        OperandReference operand = ResolveSingleOperand(instruction, false);
+        ushort value = ReadWord(operand);
         int result = value + 2;
-        _cpu.WriteRegister(reg, (ushort)result);
+        WriteWord(operand, (ushort)result);
         _cpu.UpdateStatusFlags(result);
         _cpu.SetCarry(result > 0xFFFF);
+        ApplyAutoIncrementSingle(operand);
     }
 
     private void ExecuteDEC(ushort instruction)
     {
-        int reg = instruction & 0xF;
-        ushort value = _cpu.ReadRegister(reg);
+        OperandReference operand = ResolveSingleOperand(instruction, false);
+        ushort value = ReadWord(operand);
         int result = value - 1;
-        _cpu.WriteRegister(reg, (ushort)result);
+        WriteWord(operand, (ushort)result);
         _cpu.UpdateStatusFlags(result);
         _cpu.SetCarry(result >= 0);
         _cpu.SetOverflow(value == 0x8000);
+        ApplyAutoIncrementSingle(operand);
     }
 
     private void ExecuteDECT(ushort instruction)
     {
-        int reg = instruction & 0xF;
-        ushort value = _cpu.ReadRegister(reg);
+        OperandReference operand = ResolveSingleOperand(instruction, false);
+        ushort value = ReadWord(operand);
         int result = value - 2;
-        _cpu.WriteRegister(reg, (ushort)result);
+        WriteWord(operand, (ushort)result);
         _cpu.UpdateStatusFlags(result);
         _cpu.SetCarry(result >= 0);
+        ApplyAutoIncrementSingle(operand);
     }
 
     private void ExecuteBL(ushort instruction)
@@ -750,28 +842,64 @@ public class Tms9900Isa
 
     private void ExecuteSWPB(ushort instruction)
     {
-        int reg = instruction & 0xF;
-        ushort value = _cpu.ReadRegister(reg);
+        OperandReference operand = ResolveSingleOperand(instruction, false);
+        ushort value = ReadWord(operand);
         ushort result = (ushort)((value << 8) | (value >> 8));
-        _cpu.WriteRegister(reg, result);
+        WriteWord(operand, result);
+        ApplyAutoIncrementSingle(operand);
     }
 
     private void ExecuteSETO(ushort instruction)
     {
-        int reg = instruction & 0xF;
-        _cpu.WriteRegister(reg, 0xFFFF);
+        OperandReference operand = ResolveSingleOperand(instruction, false);
+        WriteWord(operand, 0xFFFF);
+        ApplyAutoIncrementSingle(operand);
     }
 
     private void ExecuteABS(ushort instruction)
     {
-        int reg = instruction & 0xF;
-        short value = (short)_cpu.ReadRegister(reg);
+        OperandReference operand = ResolveSingleOperand(instruction, false);
+        short value = (short)ReadWord(operand);
         if (value < 0)
         {
             value = (short)-value;
             _cpu.SetOverflow(value == -32768);
         }
-        _cpu.WriteRegister(reg, (ushort)value);
+        WriteWord(operand, (ushort)value);
         _cpu.UpdateStatusFlags(value);
+        ApplyAutoIncrementSingle(operand);
+    }
+
+    private OperandReference ResolveSingleOperand(ushort instruction, bool isByte)
+    {
+        int mode = (instruction >> 4) & 0x3;
+        int reg = instruction & 0xF;
+        return ResolveOperand(mode, reg, isByte);
+    }
+
+    private (OperandReference Src, OperandReference Dest) ResolveRegDestOperands(ushort instruction, bool isByte)
+    {
+        int destReg = (instruction >> 6) & 0xF;
+        int srcMode = (instruction >> 4) & 0x3;
+        int srcReg = instruction & 0xF;
+        OperandReference src = ResolveOperand(srcMode, srcReg, isByte);
+        OperandReference dest = OperandReference.RegisterOperand(destReg);
+        return (src, dest);
+    }
+
+    private void ApplyAutoIncrementSingle(OperandReference operand)
+    {
+        if (operand.Increment <= 0)
+        {
+            return;
+        }
+
+        ushort current = _cpu.ReadRegister(operand.Register);
+        _cpu.WriteRegister(operand.Register, (ushort)(current + operand.Increment));
+    }
+
+    private void ExecuteIDLE()
+    {
+        _cpu.EnterIdle();
     }
 }

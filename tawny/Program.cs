@@ -1,4 +1,6 @@
-﻿namespace tawny;
+﻿using System.Threading;
+
+namespace tawny;
 
 class Program
 {
@@ -202,26 +204,29 @@ class Program
                     break;
 
                 case "c":
-                    if (parts.Length > 1)
+                    using (var listener = new UartKeyboardListener(memory, cpu, 8))
                     {
-                        if (!TryParseOctalUShort(parts[1], out ushort count))
+                        if (parts.Length > 1)
                         {
-                            Console.WriteLine($"Invalid count: {parts[1]}");
-                            break;
+                            if (!TryParseOctalUShort(parts[1], out ushort count))
+                            {
+                                Console.WriteLine($"Invalid count: {parts[1]}");
+                                break;
+                            }
+                            cpu.Start();
+                            for (int i = 0; i < count; i++)
+                            {
+                                if (!cpu.IsRunning) break;
+                                cpu.Step();
+                            }
+                            Console.WriteLine(FormatState(cpu));
                         }
-                        cpu.Start();
-                        for (int i = 0; i < count; i++)
+                        else
                         {
-                            if (!cpu.IsRunning) break;
-                            cpu.Step();
+                            cpu.Start();
+                            cpu.Run();
+                            Console.WriteLine(FormatState(cpu));
                         }
-                        Console.WriteLine(FormatState(cpu));
-                    }
-                    else
-                    {
-                        cpu.Start();
-                        cpu.Run();
-                        Console.WriteLine(FormatState(cpu));
                     }
                     break;
 
@@ -401,9 +406,9 @@ class Program
         }
 
         int op6 = (instruction >> 10) & 0x3F;
-        if (TryGetFormat2Mnemonic(op6, out string mnemonic))
+        if (TryGetRegDestMnemonic(op6, out string mnemonic))
         {
-            return DisassembleFormat2(memory, pc, instruction, mnemonic, mnemonic.EndsWith("B", StringComparison.Ordinal));
+            return DisassembleRegDest(memory, pc, instruction, mnemonic);
         }
         if (TryGetShiftMnemonic(op6, out string shiftMnemonic))
         {
@@ -437,53 +442,61 @@ class Program
         {
             return DisassembleImmediate(memory, pc, instruction, "CI");
         }
+        if ((instruction & 0xFFF0) == 0x0300)
+        {
+            return new DisasmResult($"LIMI {FormatOctal((ushort)(instruction & 0xF))}", 1);
+        }
+        if ((instruction & 0xFFC0) == 0x0340)
+        {
+            return new DisasmResult("IDLE", 1);
+        }
         if ((instruction & 0xFFC0) == 0x0380)
         {
             return new DisasmResult("RTWP", 1);
         }
         if ((instruction & 0xFFC0) == 0x03C0)
         {
-            return new DisasmResult($"BLWP {FormatRegister(instruction & 0xF)}", 1);
+            return DisassembleSingleOperand(memory, pc, instruction, "BLWP");
         }
         if ((instruction & 0xFFC0) == 0x0400)
         {
-            return new DisasmResult($"CLR {FormatRegister(instruction & 0xF)}", 1);
+            return DisassembleSingleOperand(memory, pc, instruction, "CLR");
         }
         if ((instruction & 0xFFC0) == 0x0440)
         {
-            return new DisasmResult($"NEG {FormatRegister(instruction & 0xF)}", 1);
+            return DisassembleSingleOperand(memory, pc, instruction, "NEG");
         }
         if ((instruction & 0xFFC0) == 0x0480)
         {
-            return new DisasmResult($"INV {FormatRegister(instruction & 0xF)}", 1);
+            return DisassembleSingleOperand(memory, pc, instruction, "INV");
         }
         if ((instruction & 0xFFC0) == 0x04C0)
         {
-            return new DisasmResult($"INC {FormatRegister(instruction & 0xF)}", 1);
+            return DisassembleSingleOperand(memory, pc, instruction, "INC");
         }
         if ((instruction & 0xFFC0) == 0x0540)
         {
-            return new DisasmResult($"DEC {FormatRegister(instruction & 0xF)}", 1);
+            return DisassembleSingleOperand(memory, pc, instruction, "DEC");
         }
         if ((instruction & 0xFFC0) == 0x0580)
         {
-            return new DisasmResult($"DECT {FormatRegister(instruction & 0xF)}", 1);
+            return DisassembleSingleOperand(memory, pc, instruction, "DECT");
         }
         if ((instruction & 0xFFC0) == 0x05C0)
         {
-            return new DisasmResult($"INCT {FormatRegister(instruction & 0xF)}", 1);
+            return DisassembleSingleOperand(memory, pc, instruction, "INCT");
         }
         if ((instruction & 0xFFC0) == 0x0600)
         {
-            return new DisasmResult($"SWPB {FormatRegister(instruction & 0xF)}", 1);
+            return DisassembleSingleOperand(memory, pc, instruction, "SWPB");
         }
         if ((instruction & 0xFFC0) == 0x0640)
         {
-            return new DisasmResult($"SETO {FormatRegister(instruction & 0xF)}", 1);
+            return DisassembleSingleOperand(memory, pc, instruction, "SETO");
         }
         if ((instruction & 0xFFC0) == 0x0680)
         {
-            return new DisasmResult($"ABS {FormatRegister(instruction & 0xF)}", 1);
+            return DisassembleSingleOperand(memory, pc, instruction, "ABS");
         }
         if ((instruction & 0xFFF0) == 0x0C00)
         {
@@ -545,7 +558,7 @@ class Program
         }
     }
 
-    static bool TryGetFormat2Mnemonic(int op6, out string mnemonic)
+    static bool TryGetRegDestMnemonic(int op6, out string mnemonic)
     {
         switch (op6)
         {
@@ -557,8 +570,6 @@ class Program
             case 0x09: mnemonic = "CB"; return true;
             case 0x0A: mnemonic = "A"; return true;
             case 0x0B: mnemonic = "AB"; return true;
-            case 0x0C: mnemonic = "MOV"; return true;
-            case 0x0D: mnemonic = "MOVB"; return true;
             case 0x0E: mnemonic = "SOC"; return true;
             case 0x0F: mnemonic = "SOCB"; return true;
             default:
@@ -594,6 +605,29 @@ class Program
         string dest = FormatOperand(memory, ref nextWord, td, d, ref wordsUsed);
 
         return new DisasmResult($"{mnemonic} {src}, {dest}", wordsUsed);
+    }
+
+    static DisasmResult DisassembleRegDest(Tms9900Memory memory, ushort pc, ushort instruction, string mnemonic)
+    {
+        int dest = (instruction >> 6) & 0xF;
+        int ts = (instruction >> 4) & 0x3;
+        int s = instruction & 0xF;
+
+        int wordsUsed = 1;
+        ushort nextWord = (ushort)(pc + 2);
+        string src = FormatOperand(memory, ref nextWord, ts, s, ref wordsUsed);
+
+        return new DisasmResult($"{mnemonic} {src}, {FormatRegister(dest)}", wordsUsed);
+    }
+
+    static DisasmResult DisassembleSingleOperand(Tms9900Memory memory, ushort pc, ushort instruction, string mnemonic)
+    {
+        int mode = (instruction >> 4) & 0x3;
+        int reg = instruction & 0xF;
+        int wordsUsed = 1;
+        ushort nextWord = (ushort)(pc + 2);
+        string operand = FormatOperand(memory, ref nextWord, mode, reg, ref wordsUsed);
+        return new DisasmResult($"{mnemonic} {operand}", wordsUsed);
     }
 
     static string FormatOperand(Tms9900Memory memory, ref ushort nextWordAddr, int mode, int reg, ref int wordsUsed)
@@ -933,5 +967,47 @@ class Program
         return $"PC={FormatOctal(cpu.ProgramCounter)} WP={FormatOctal(cpu.WorkspacePointer)} " +
                $"ST={FormatOctal(cpu.StatusRegister)} R0={FormatOctal(cpu.ReadRegister(0))} " +
                $"R1={FormatOctal(cpu.ReadRegister(1))} R2={FormatOctal(cpu.ReadRegister(2))}";
+    }
+
+    private sealed class UartKeyboardListener : IDisposable
+    {
+        private readonly CancellationTokenSource _cts = new();
+        private readonly Thread _thread;
+
+        public UartKeyboardListener(Tms9900Memory memory, Tms9900Cpu cpu, int interruptLevel)
+        {
+            _thread = new Thread(() => ListenLoop(memory, cpu, interruptLevel, _cts.Token))
+            {
+                IsBackground = true
+            };
+            _thread.Start();
+        }
+
+        public void Dispose()
+        {
+            _cts.Cancel();
+            _thread.Join();
+            _cts.Dispose();
+        }
+
+        private static void ListenLoop(Tms9900Memory memory, Tms9900Cpu cpu, int interruptLevel, CancellationToken token)
+        {
+            while (!token.IsCancellationRequested)
+            {
+                if (Console.KeyAvailable)
+                {
+                    ConsoleKeyInfo key = Console.ReadKey(true);
+                    if (key.KeyChar != '\0')
+                    {
+                        memory.ReceiveUartByte((byte)key.KeyChar);
+                        cpu.TriggerInterrupt(interruptLevel);
+                    }
+                }
+                else
+                {
+                    Thread.Sleep(5);
+                }
+            }
+        }
     }
 }
