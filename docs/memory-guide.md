@@ -86,7 +86,7 @@ Example (to examine memory at address 0x0100):
 ```
 > x 400
 Memory at 0o000400:
-  000400: 000200 170001 170002 170003 170004 170005 170006 170007
+  000400: 000000 000000 000000 000000 000000 000000 000000 000000
   000420: ...
 ```
 Note: The monitor uses octal for input/output, but this guide documents addresses in hexadecimal. Address 0x0100 (hex) = 0o000400 (octal).
@@ -123,7 +123,7 @@ MMIO devices:
 0xF000 (>F000): UART status register (THRE bit 0)
 0xF002 (>F002): UART data register
 
-User code by convention starts at 0x0100.
+**Note**: General RAM starts at 0x00C0, but user code by convention starts at 0x0100 (providing a small buffer area for potential future use).
 
 ## Additional Resources
 
