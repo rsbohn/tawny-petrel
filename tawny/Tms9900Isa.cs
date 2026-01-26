@@ -25,6 +25,12 @@ public class Tms9900Isa
 
         switch (opcode)
         {
+            case 0xC:
+                ExecuteMOV(instruction, false);
+                break;
+            case 0xD:
+                ExecuteMOV(instruction, true);
+                break;
             case 0x0:
                 ExecuteFormat1(instruction);
                 break;
@@ -46,61 +52,43 @@ public class Tms9900Isa
     /// </summary>
     private void ExecuteFormat1(ushort instruction)
     {
-        int opcode = (instruction >> 8) & 0xFF;
-
-        switch (opcode)
+        if ((instruction & 0xFFF0) == 0x0200)
         {
-            case 0x02: // LI - Load Immediate
-                ExecuteLI(instruction);
-                break;
-            case 0x03: // Check for RTWP and other 0x03xx instructions
-                if ((instruction & 0xFFC0) == 0x0380)
-                    _cpu.ReturnFromContext();
-                else if ((instruction & 0xFFC0) == 0x03C0)
-                    ExecuteBLWP(instruction);
-                else
-                    DecodeExtendedOps(instruction);
-                break;
-            case 0x04: // AI - Add Immediate or CLR/NEG/INV/INC
-                if ((instruction & 0xFF00) == 0x0400)
-                {
-                    // Check if this is AI or single-operand instruction
-                    if ((instruction & 0x00F0) == 0)
-                        ExecuteAI(instruction);
-                    else
-                        DecodeExtendedOps(instruction);
-                }
-                else
-                {
-                    DecodeExtendedOps(instruction);
-                }
-                break;
-            case 0x05: // INCT, DEC, DECT, BL
-                DecodeExtendedOps(instruction);
-                break;
-            case 0x06: // ANDI - AND Immediate or SWPB/SETO/ABS
-                if ((instruction & 0xFF00) == 0x0600)
-                    ExecuteANDI(instruction);
-                else
-                    DecodeExtendedOps(instruction);
-                break;
-            case 0x08: // ORI - OR Immediate
-                ExecuteORI(instruction);
-                break;
-            case 0x0A: // CI - Compare Immediate
-                ExecuteCI(instruction);
-                break;
-            case 0x0C: // STWP - Store Workspace Pointer
-                ExecuteSTWP(instruction);
-                break;
-            case 0x0E: // STST - Store Status Register
-                ExecuteSTST(instruction);
-                break;
-            default:
-                // Unknown instruction - could log or halt
-                _cpu.Stop();
-                break;
+            ExecuteLI(instruction);
+            return;
         }
+        if ((instruction & 0xFFF0) == 0x0220)
+        {
+            ExecuteAI(instruction);
+            return;
+        }
+        if ((instruction & 0xFFF0) == 0x0240)
+        {
+            ExecuteANDI(instruction);
+            return;
+        }
+        if ((instruction & 0xFFF0) == 0x0260)
+        {
+            ExecuteORI(instruction);
+            return;
+        }
+        if ((instruction & 0xFFF0) == 0x0280)
+        {
+            ExecuteCI(instruction);
+            return;
+        }
+        if ((instruction & 0xFFF0) == 0x0C00)
+        {
+            ExecuteSTWP(instruction);
+            return;
+        }
+        if ((instruction & 0xFFF0) == 0x0E00)
+        {
+            ExecuteSTST(instruction);
+            return;
+        }
+
+        DecodeExtendedOps(instruction);
     }
 
     /// <summary>
@@ -275,7 +263,7 @@ public class Tms9900Isa
         {
             ExecuteINC(instruction);
         }
-        else if ((instruction & 0xFFC0) == 0x0500) // INCT - Increment by Two
+        else if ((instruction & 0xFFC0) == 0x05C0) // INCT - Increment by Two
         {
             ExecuteINCT(instruction);
         }
@@ -286,10 +274,6 @@ public class Tms9900Isa
         else if ((instruction & 0xFFC0) == 0x0580) // DECT - Decrement by Two
         {
             ExecuteDECT(instruction);
-        }
-        else if ((instruction & 0xFFC0) == 0x05C0) // BL - Branch and Link
-        {
-            ExecuteBL(instruction);
         }
         else if ((instruction & 0xFFC0) == 0x0600) // SWPB - Swap Bytes
         {
@@ -445,11 +429,148 @@ public class Tms9900Isa
 
     private void ExecuteMOV(ushort instruction, bool isByte)
     {
-        int src = (instruction >> 6) & 0xF;
-        int dest = instruction & 0xF;
-        ushort value = _cpu.ReadRegister(src);
-        _cpu.WriteRegister(dest, value);
-        _cpu.UpdateStatusFlags(value);
+        int td = (instruction >> 10) & 0x3;
+        int d = (instruction >> 6) & 0xF;
+        int ts = (instruction >> 4) & 0x3;
+        int s = instruction & 0xF;
+
+        OperandReference src = ResolveOperand(ts, s, isByte);
+        OperandReference dest = ResolveOperand(td, d, isByte);
+
+        if (isByte)
+        {
+            byte value = ReadByte(src);
+            WriteByte(dest, value);
+            _cpu.UpdateStatusFlagsByte(value);
+        }
+        else
+        {
+            ushort value = ReadWord(src);
+            WriteWord(dest, value);
+            _cpu.UpdateStatusFlags(value);
+        }
+
+        ApplyAutoIncrement(src, dest);
+    }
+
+    private ushort ReadWord(OperandReference operand)
+    {
+        if (operand.Kind == OperandKind.Register)
+        {
+            return _cpu.ReadRegister(operand.Register);
+        }
+
+        return _memory.ReadWord(operand.Address);
+    }
+
+    private byte ReadByte(OperandReference operand)
+    {
+        if (operand.Kind == OperandKind.Register)
+        {
+            return (byte)(_cpu.ReadRegister(operand.Register) & 0x00FF);
+        }
+
+        return _memory.ReadByte(operand.Address);
+    }
+
+    private void WriteWord(OperandReference operand, ushort value)
+    {
+        if (operand.Kind == OperandKind.Register)
+        {
+            _cpu.WriteRegister(operand.Register, value);
+            return;
+        }
+
+        _memory.WriteWord(operand.Address, value);
+    }
+
+    private void WriteByte(OperandReference operand, byte value)
+    {
+        if (operand.Kind == OperandKind.Register)
+        {
+            ushort current = _cpu.ReadRegister(operand.Register);
+            ushort updated = (ushort)((current & 0xFF00) | value);
+            _cpu.WriteRegister(operand.Register, updated);
+            return;
+        }
+
+        _memory.WriteByte(operand.Address, value);
+    }
+
+    private OperandReference ResolveOperand(int mode, int register, bool isByte)
+    {
+        switch (mode)
+        {
+            case 0:
+                return OperandReference.RegisterOperand(register);
+            case 1:
+            {
+                ushort address = _cpu.ReadRegister(register);
+                return OperandReference.Memory(address);
+            }
+            case 2:
+            {
+                ushort offset = FetchNextWord();
+                ushort baseAddress = register == 0 ? (ushort)0 : _cpu.ReadRegister(register);
+                ushort address = (ushort)(baseAddress + offset);
+                return OperandReference.Memory(address);
+            }
+            case 3:
+            {
+                ushort address = _cpu.ReadRegister(register);
+                int increment = isByte ? 1 : 2;
+                return OperandReference.AutoIncrement(address, register, increment);
+            }
+            default:
+                throw new InvalidOperationException($"Unsupported addressing mode {mode}.");
+        }
+    }
+
+    private ushort FetchNextWord()
+    {
+        ushort word = _memory.ReadWord(_cpu.ProgramCounter);
+        _cpu.SetProgramCounter((ushort)(_cpu.ProgramCounter + 2));
+        return word;
+    }
+
+    private void ApplyAutoIncrement(OperandReference src, OperandReference dest)
+    {
+        if (src.Increment == 0 && dest.Increment == 0)
+        {
+            return;
+        }
+
+        if (src.Increment > 0 && dest.Increment > 0 && src.Register == dest.Register)
+        {
+            ushort current = _cpu.ReadRegister(src.Register);
+            _cpu.WriteRegister(src.Register, (ushort)(current + src.Increment + dest.Increment));
+            return;
+        }
+
+        if (src.Increment > 0)
+        {
+            ushort current = _cpu.ReadRegister(src.Register);
+            _cpu.WriteRegister(src.Register, (ushort)(current + src.Increment));
+        }
+
+        if (dest.Increment > 0)
+        {
+            ushort current = _cpu.ReadRegister(dest.Register);
+            _cpu.WriteRegister(dest.Register, (ushort)(current + dest.Increment));
+        }
+    }
+
+    private readonly record struct OperandReference(OperandKind Kind, ushort Address, int Register, int Increment)
+    {
+        public static OperandReference RegisterOperand(int register) => new OperandReference(OperandKind.Register, 0, register, 0);
+        public static OperandReference Memory(ushort address) => new OperandReference(OperandKind.Memory, address, 0, 0);
+        public static OperandReference AutoIncrement(ushort address, int register, int increment) => new OperandReference(OperandKind.Memory, address, register, increment);
+    }
+
+    private enum OperandKind
+    {
+        Register,
+        Memory
     }
 
     private void ExecuteSOC(ushort instruction, bool isByte)

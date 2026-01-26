@@ -4,6 +4,12 @@ class Program
 {
     static void Main(string[] args)
     {
+        if (args.Length > 0 && string.Equals(args[0], "asm", StringComparison.OrdinalIgnoreCase))
+        {
+            RunAssembler(args);
+            return;
+        }
+
         Console.WriteLine("===========================================");
         Console.WriteLine("Tawny Petrel - TMS9900 Simulator");
         Console.WriteLine("===========================================");
@@ -13,6 +19,13 @@ class Program
         var memory = new Tms9900Memory();
         var cpu = new Tms9900Cpu(memory);
         InitializeMonitorStack(memory);
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            cpu.Stop();
+            Console.WriteLine();
+            Console.WriteLine("Execution stopped.");
+        };
 
         // Interactive mode
         Console.WriteLine("===========================================");
@@ -28,6 +41,11 @@ class Program
         Console.WriteLine("  demo       - Run the demo program");
         Console.WriteLine("  regs       - Show all registers");
         Console.WriteLine("  . dup drop swap over + - and or xor invert @ !");
+        Console.WriteLine("  load <file> - Load SREC file into memory");
+        Console.WriteLine("  boot [file] - Load SREC (optional) and set WP/PC from 000000-000003");
+        Console.WriteLine("  dis <addr> [count] - Disassemble from address (octal)");
+        Console.WriteLine("  trace [n]  - Trace execution for n steps (octal)");
+        Console.WriteLine("  c [n]      - Continue execution (optional step count, octal)");
         Console.WriteLine("  help       - Show this help");
         Console.WriteLine("  q          - Quit");
         Console.WriteLine();
@@ -37,6 +55,11 @@ class Program
         {
             Console.Write("> ");
             string? input = Console.ReadLine();
+            if (input == null)
+            {
+                Console.WriteLine();
+                break;
+            }
             if (string.IsNullOrWhiteSpace(input)) continue;
 
             string[] parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -46,15 +69,12 @@ class Program
             {
                 case "s":
                 case "step":
-                    if (cpu.IsRunning)
+                    if (!cpu.IsRunning)
                     {
-                        cpu.Step();
-                        Console.WriteLine(cpu.GetState());
+                        cpu.Start();
                     }
-                    else
-                    {
-                        Console.WriteLine("CPU is not running. Use 'r' to reset.");
-                    }
+                    cpu.Step();
+                    Console.WriteLine(FormatState(cpu));
                     break;
 
                 case "r":
@@ -172,6 +192,101 @@ class Program
                     RunDemo(memory, cpu);
                     break;
 
+                case "load":
+                    if (parts.Length < 2)
+                    {
+                        Console.WriteLine("Usage: load <filename>");
+                        break;
+                    }
+                    TryLoadSrec(parts[1], memory);
+                    break;
+
+                case "c":
+                    if (parts.Length > 1)
+                    {
+                        if (!TryParseOctalUShort(parts[1], out ushort count))
+                        {
+                            Console.WriteLine($"Invalid count: {parts[1]}");
+                            break;
+                        }
+                        cpu.Start();
+                        for (int i = 0; i < count; i++)
+                        {
+                            if (!cpu.IsRunning) break;
+                            cpu.Step();
+                        }
+                        Console.WriteLine(FormatState(cpu));
+                    }
+                    else
+                    {
+                        cpu.Start();
+                        cpu.Run();
+                        Console.WriteLine(FormatState(cpu));
+                    }
+                    break;
+
+                case "boot":
+                    if (parts.Length > 1)
+                    {
+                        if (!TryLoadSrec(parts[1], memory))
+                        {
+                            break;
+                        }
+                    }
+                    BootFromVectors(cpu, memory);
+                    break;
+
+                case "dis":
+                    if (parts.Length < 2)
+                    {
+                        Console.WriteLine("Usage: dis <address> [count]");
+                        break;
+                    }
+                    if (!TryParseOctalUShort(parts[1], out ushort disAddr))
+                    {
+                        Console.WriteLine($"Invalid address: {parts[1]}");
+                        break;
+                    }
+                    int disCount = 1;
+                    if (parts.Length > 2)
+                    {
+                        if (!TryParseOctalUShort(parts[2], out ushort parsedCount))
+                        {
+                            Console.WriteLine($"Invalid count: {parts[2]}");
+                            break;
+                        }
+                        disCount = parsedCount;
+                    }
+                    Disassemble(memory, (ushort)(disAddr & 0xFFFE), disCount);
+                    break;
+
+                case "trace":
+                case "t":
+                    int traceCount = 1;
+                    if (parts.Length > 1)
+                    {
+                        if (!TryParseOctalUShort(parts[1], out ushort parsedCount))
+                        {
+                            Console.WriteLine($"Invalid count: {parts[1]}");
+                            break;
+                        }
+                        traceCount = parsedCount;
+                    }
+                    if (!cpu.IsRunning)
+                    {
+                        cpu.Start();
+                    }
+                    for (int i = 0; i < traceCount; i++)
+                    {
+                        if (!cpu.IsRunning) break;
+                        ushort pc = cpu.ProgramCounter;
+                        ushort instruction = memory.ReadWord(pc);
+                        var dis = DisassembleInstruction(memory, pc, instruction);
+                        cpu.Step();
+                        Console.WriteLine($"{FormatOctal(pc)}: {FormatOctal(instruction)} {dis.Text} -> {FormatState(cpu)}");
+                    }
+                    break;
+
                 case "help":
                     PrintHelp();
                     break;
@@ -216,8 +331,335 @@ class Program
         Console.WriteLine("  demo       - Run the demo program");
         Console.WriteLine("  regs       - Show all registers");
         Console.WriteLine("  . dup drop swap over + - and or xor invert @ !");
+        Console.WriteLine("  load <file> - Load SREC file into memory");
+        Console.WriteLine("  boot [file] - Load SREC (optional) and set WP/PC from 000000-000003");
+        Console.WriteLine("  dis <addr> [count] - Disassemble from address (octal)");
+        Console.WriteLine("  trace [n]  - Trace execution for n steps (octal)");
+        Console.WriteLine("  c [n]      - Continue execution (optional step count, octal)");
         Console.WriteLine("  help       - Show this help");
         Console.WriteLine("  q          - Quit");
+    }
+
+    static bool TryLoadSrec(string path, Tms9900Memory memory)
+    {
+        try
+        {
+            IReadOnlyDictionary<ushort, byte> bytes = SRecordReader.ReadFile(path);
+            foreach (var pair in bytes)
+            {
+                memory.WriteByte(pair.Key, pair.Value);
+            }
+            Console.WriteLine($"Loaded {bytes.Count} byte(s) from {path}.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            return false;
+        }
+    }
+
+    static void BootFromVectors(Tms9900Cpu cpu, Tms9900Memory memory)
+    {
+        cpu.SetWorkspacePointer(memory.ReadWord(0x0000));
+        cpu.SetProgramCounter(memory.ReadWord(0x0002));
+        cpu.Stop();
+        Console.WriteLine("Boot vectors loaded.");
+        Console.WriteLine(FormatState(cpu));
+    }
+
+    static void Disassemble(Tms9900Memory memory, ushort address, int count)
+    {
+        ushort pc = address;
+        for (int i = 0; i < count; i++)
+        {
+            ushort instruction = memory.ReadWord(pc);
+            var result = DisassembleInstruction(memory, pc, instruction);
+            Console.WriteLine($"{FormatOctal(pc)}: {FormatOctal(instruction)} {result.Text}");
+            pc = (ushort)(pc + (result.Words * 2));
+        }
+    }
+
+    static DisasmResult DisassembleInstruction(Tms9900Memory memory, ushort pc, ushort instruction)
+    {
+        int opcodeNibble = instruction >> 12;
+        if (opcodeNibble == 0xC)
+        {
+            return DisassembleFormat2(memory, pc, instruction, "MOV", false);
+        }
+        if (opcodeNibble == 0xD)
+        {
+            return DisassembleFormat2(memory, pc, instruction, "MOVB", true);
+        }
+        if (opcodeNibble == 0x1)
+        {
+            return DisassembleJump(pc, instruction);
+        }
+        if (opcodeNibble == 0x0)
+        {
+            return DisassembleFormat1(memory, pc, instruction);
+        }
+
+        int op6 = (instruction >> 10) & 0x3F;
+        if (TryGetFormat2Mnemonic(op6, out string mnemonic))
+        {
+            return DisassembleFormat2(memory, pc, instruction, mnemonic, mnemonic.EndsWith("B", StringComparison.Ordinal));
+        }
+        if (TryGetShiftMnemonic(op6, out string shiftMnemonic))
+        {
+            int reg = (instruction >> 6) & 0xF;
+            int count = instruction & 0xF;
+            return new DisasmResult($"{shiftMnemonic} {FormatRegister(reg)}, {FormatOctal((ushort)count)}", 1);
+        }
+
+        return new DisasmResult("DATA", 1);
+    }
+
+    static DisasmResult DisassembleFormat1(Tms9900Memory memory, ushort pc, ushort instruction)
+    {
+        if ((instruction & 0xFFF0) == 0x0200)
+        {
+            return DisassembleImmediate(memory, pc, instruction, "LI");
+        }
+        if ((instruction & 0xFFF0) == 0x0220)
+        {
+            return DisassembleImmediate(memory, pc, instruction, "AI");
+        }
+        if ((instruction & 0xFFF0) == 0x0240)
+        {
+            return DisassembleImmediate(memory, pc, instruction, "ANDI");
+        }
+        if ((instruction & 0xFFF0) == 0x0260)
+        {
+            return DisassembleImmediate(memory, pc, instruction, "ORI");
+        }
+        if ((instruction & 0xFFF0) == 0x0280)
+        {
+            return DisassembleImmediate(memory, pc, instruction, "CI");
+        }
+        if ((instruction & 0xFFC0) == 0x0380)
+        {
+            return new DisasmResult("RTWP", 1);
+        }
+        if ((instruction & 0xFFC0) == 0x03C0)
+        {
+            return new DisasmResult($"BLWP {FormatRegister(instruction & 0xF)}", 1);
+        }
+        if ((instruction & 0xFFC0) == 0x0400)
+        {
+            return new DisasmResult($"CLR {FormatRegister(instruction & 0xF)}", 1);
+        }
+        if ((instruction & 0xFFC0) == 0x0440)
+        {
+            return new DisasmResult($"NEG {FormatRegister(instruction & 0xF)}", 1);
+        }
+        if ((instruction & 0xFFC0) == 0x0480)
+        {
+            return new DisasmResult($"INV {FormatRegister(instruction & 0xF)}", 1);
+        }
+        if ((instruction & 0xFFC0) == 0x04C0)
+        {
+            return new DisasmResult($"INC {FormatRegister(instruction & 0xF)}", 1);
+        }
+        if ((instruction & 0xFFC0) == 0x0540)
+        {
+            return new DisasmResult($"DEC {FormatRegister(instruction & 0xF)}", 1);
+        }
+        if ((instruction & 0xFFC0) == 0x0580)
+        {
+            return new DisasmResult($"DECT {FormatRegister(instruction & 0xF)}", 1);
+        }
+        if ((instruction & 0xFFC0) == 0x05C0)
+        {
+            return new DisasmResult($"INCT {FormatRegister(instruction & 0xF)}", 1);
+        }
+        if ((instruction & 0xFFC0) == 0x0600)
+        {
+            return new DisasmResult($"SWPB {FormatRegister(instruction & 0xF)}", 1);
+        }
+        if ((instruction & 0xFFC0) == 0x0640)
+        {
+            return new DisasmResult($"SETO {FormatRegister(instruction & 0xF)}", 1);
+        }
+        if ((instruction & 0xFFC0) == 0x0680)
+        {
+            return new DisasmResult($"ABS {FormatRegister(instruction & 0xF)}", 1);
+        }
+        if ((instruction & 0xFFF0) == 0x0C00)
+        {
+            return new DisasmResult($"STWP {FormatRegister(instruction & 0xF)}", 1);
+        }
+        if ((instruction & 0xFFF0) == 0x0E00)
+        {
+            return new DisasmResult($"STST {FormatRegister(instruction & 0xF)}", 1);
+        }
+        if ((instruction & 0xFC00) == 0x2C00)
+        {
+            int xop = (instruction >> 6) & 0xF;
+            int reg = instruction & 0xF;
+            return new DisasmResult($"XOP {FormatRegister(reg)}, {FormatOctal((ushort)xop)}", 1);
+        }
+
+        return new DisasmResult("DATA", 1);
+    }
+
+    static DisasmResult DisassembleImmediate(Tms9900Memory memory, ushort pc, ushort instruction, string mnemonic)
+    {
+        int reg = instruction & 0xF;
+        ushort immediate = memory.ReadWord((ushort)(pc + 2));
+        return new DisasmResult($"{mnemonic} {FormatRegister(reg)}, {FormatOctal(immediate)}", 2);
+    }
+
+    static DisasmResult DisassembleJump(ushort pc, ushort instruction)
+    {
+        int opcode = (instruction >> 8) & 0xFF;
+        if (!JumpMnemonic(opcode, out string mnemonic))
+        {
+            return new DisasmResult("DATA", 1);
+        }
+        sbyte displacement = unchecked((sbyte)(instruction & 0xFF));
+        ushort target = (ushort)(pc + 2 + (displacement * 2));
+        return new DisasmResult($"{mnemonic} {FormatOctal(target)}", 1);
+    }
+
+    static bool JumpMnemonic(int opcode, out string mnemonic)
+    {
+        switch (opcode)
+        {
+            case 0x10: mnemonic = "JMP"; return true;
+            case 0x11: mnemonic = "JLT"; return true;
+            case 0x12: mnemonic = "JLE"; return true;
+            case 0x13: mnemonic = "JEQ"; return true;
+            case 0x14: mnemonic = "JHE"; return true;
+            case 0x15: mnemonic = "JGT"; return true;
+            case 0x16: mnemonic = "JNE"; return true;
+            case 0x17: mnemonic = "JNC"; return true;
+            case 0x18: mnemonic = "JOC"; return true;
+            case 0x19: mnemonic = "JNO"; return true;
+            case 0x1A: mnemonic = "JL"; return true;
+            case 0x1B: mnemonic = "JH"; return true;
+            case 0x1C: mnemonic = "JOP"; return true;
+            default:
+                mnemonic = string.Empty;
+                return false;
+        }
+    }
+
+    static bool TryGetFormat2Mnemonic(int op6, out string mnemonic)
+    {
+        switch (op6)
+        {
+            case 0x04: mnemonic = "SZC"; return true;
+            case 0x05: mnemonic = "SZCB"; return true;
+            case 0x06: mnemonic = "S"; return true;
+            case 0x07: mnemonic = "SB"; return true;
+            case 0x08: mnemonic = "C"; return true;
+            case 0x09: mnemonic = "CB"; return true;
+            case 0x0A: mnemonic = "A"; return true;
+            case 0x0B: mnemonic = "AB"; return true;
+            case 0x0C: mnemonic = "MOV"; return true;
+            case 0x0D: mnemonic = "MOVB"; return true;
+            case 0x0E: mnemonic = "SOC"; return true;
+            case 0x0F: mnemonic = "SOCB"; return true;
+            default:
+                mnemonic = string.Empty;
+                return false;
+        }
+    }
+
+    static bool TryGetShiftMnemonic(int op6, out string mnemonic)
+    {
+        switch (op6)
+        {
+            case 0x10: mnemonic = "SLA"; return true;
+            case 0x11: mnemonic = "SRA"; return true;
+            case 0x12: mnemonic = "SRC"; return true;
+            case 0x13: mnemonic = "SRL"; return true;
+            default:
+                mnemonic = string.Empty;
+                return false;
+        }
+    }
+
+    static DisasmResult DisassembleFormat2(Tms9900Memory memory, ushort pc, ushort instruction, string mnemonic, bool isByte)
+    {
+        int td = (instruction >> 10) & 0x3;
+        int d = (instruction >> 6) & 0xF;
+        int ts = (instruction >> 4) & 0x3;
+        int s = instruction & 0xF;
+
+        int wordsUsed = 1;
+        ushort nextWord = (ushort)(pc + 2);
+        string src = FormatOperand(memory, ref nextWord, ts, s, ref wordsUsed);
+        string dest = FormatOperand(memory, ref nextWord, td, d, ref wordsUsed);
+
+        return new DisasmResult($"{mnemonic} {src}, {dest}", wordsUsed);
+    }
+
+    static string FormatOperand(Tms9900Memory memory, ref ushort nextWordAddr, int mode, int reg, ref int wordsUsed)
+    {
+        switch (mode)
+        {
+            case 0:
+                return FormatRegister(reg);
+            case 1:
+                return $"*{FormatRegister(reg)}";
+            case 2:
+            {
+                ushort displacement = memory.ReadWord(nextWordAddr);
+                nextWordAddr += 2;
+                wordsUsed++;
+                if (reg == 0)
+                {
+                    return $"@{FormatOctal(displacement)}";
+                }
+                return $"@{FormatOctal(displacement)}({FormatRegister(reg)})";
+            }
+            case 3:
+                return $"*{FormatRegister(reg)}+";
+            default:
+                return "??";
+        }
+    }
+
+    static string FormatRegister(int register)
+    {
+        return register.ToString();
+    }
+
+    private readonly record struct DisasmResult(string Text, int Words);
+
+    static void RunAssembler(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            Console.WriteLine("Usage: dotnet run --project tawny -- asm <source> [-o <dest-folder>]");
+            Environment.Exit(1);
+        }
+
+        string sourcePath = args[1];
+        string? outputDir = null;
+
+        for (int i = 2; i < args.Length; i++)
+        {
+            if (args[i] == "-o" && i + 1 < args.Length)
+            {
+                outputDir = args[i + 1];
+                i++;
+            }
+        }
+
+        try
+        {
+            var assembler = new Assembler();
+            AssemblerResult result = assembler.Assemble(sourcePath, outputDir);
+            Console.WriteLine($"Wrote {result.Bytes.Count} byte(s).");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            Environment.Exit(1);
+        }
     }
 
     static void RunDemo(Tms9900Memory memory, Tms9900Cpu cpu)

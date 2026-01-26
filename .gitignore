@@ -22,6 +22,10 @@ bld/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
+# asm990 output files
+*.lst
+*.obj
+build/
 
 # .NET Core
 project.lock.json

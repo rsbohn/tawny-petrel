@@ -157,6 +157,24 @@ public class Tms9900Cpu
     }
 
     /// <summary>
+    /// Update status flags based on an 8-bit result.
+    /// </summary>
+    public void UpdateStatusFlagsByte(byte result)
+    {
+        _statusRegister &= 0x1FFF;
+
+        if (result == 0)
+            _statusRegister |= EQ_BIT;
+
+        if (result > 0)
+            _statusRegister |= LGT_BIT;
+
+        sbyte signedResult = unchecked((sbyte)result);
+        if (signedResult > 0)
+            _statusRegister |= AGT_BIT;
+    }
+
+    /// <summary>
     /// Set the carry flag.
     /// </summary>
     public void SetCarry(bool value)

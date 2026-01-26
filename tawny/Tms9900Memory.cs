@@ -8,6 +8,8 @@ public class Tms9900Memory
 {
     private readonly byte[] _memory;
     private const int MemorySize = 0x10000; // 64KB address space
+    private const ushort UartStatusAddress = 0xF000;
+    private const ushort UartDataAddress = 0xF002;
 
     public Tms9900Memory()
     {
@@ -22,6 +24,11 @@ public class Tms9900Memory
         if (address >= MemorySize - 1)
             throw new ArgumentOutOfRangeException(nameof(address), 
                 $"Address 0x{address:X4} is too close to end of memory for word access");
+
+        if (address == UartStatusAddress)
+        {
+            return 0x0000;
+        }
         
         // TMS9900 is big-endian
         return (ushort)((_memory[address] << 8) | _memory[address + 1]);
@@ -36,6 +43,12 @@ public class Tms9900Memory
             throw new ArgumentOutOfRangeException(nameof(address), 
                 $"Address 0x{address:X4} is too close to end of memory for word access");
         
+        if (address == UartDataAddress)
+        {
+            Console.Write((char)(value & 0x00FF));
+            Console.Out.Flush();
+        }
+
         _memory[address] = (byte)(value >> 8);
         _memory[address + 1] = (byte)(value & 0xFF);
     }
@@ -47,6 +60,10 @@ public class Tms9900Memory
     public byte ReadByte(ushort address)
     {
         // No bounds check needed: ushort max (0xFFFF = 65535) is always < MemorySize (0x10000 = 65536)
+        if (address == UartStatusAddress)
+        {
+            return 0x00;
+        }
         return _memory[address];
     }
 
@@ -57,6 +74,11 @@ public class Tms9900Memory
     public void WriteByte(ushort address, byte value)
     {
         // No bounds check needed: ushort max (0xFFFF = 65535) is always < MemorySize (0x10000 = 65536)
+        if (address == UartDataAddress)
+        {
+            Console.Write((char)value);
+            Console.Out.Flush();
+        }
         _memory[address] = value;
     }
 

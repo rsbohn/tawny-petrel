@@ -35,7 +35,7 @@ public class Tms9900IsaTests
         memory.WriteWord(0x2000, 0x0005);
         
         // Program: AI R0, 0x0003
-        memory.WriteWord(0x0100, 0x0400); // AI R0
+        memory.WriteWord(0x0100, 0x0220); // AI R0
         memory.WriteWord(0x0102, 0x0003); // Immediate value
         
         var cpu = new Tms9900Cpu(memory);
@@ -57,7 +57,7 @@ public class Tms9900IsaTests
         memory.WriteWord(0x2000, 0xFF0F);
         
         // Program: ANDI R0, 0x0F0F
-        memory.WriteWord(0x0100, 0x0600); // ANDI R0
+        memory.WriteWord(0x0100, 0x0240); // ANDI R0
         memory.WriteWord(0x0102, 0x0F0F); // Immediate value
         
         var cpu = new Tms9900Cpu(memory);
@@ -79,7 +79,7 @@ public class Tms9900IsaTests
         memory.WriteWord(0x2000, 0x0F00);
         
         // Program: ORI R0, 0x00F0
-        memory.WriteWord(0x0100, 0x0800); // ORI R0
+        memory.WriteWord(0x0100, 0x0260); // ORI R0
         memory.WriteWord(0x0102, 0x00F0); // Immediate value
         
         var cpu = new Tms9900Cpu(memory);
@@ -101,7 +101,7 @@ public class Tms9900IsaTests
         memory.WriteWord(0x2000, 0x1234);
         
         // Program: CI R0, 0x1234
-        memory.WriteWord(0x0100, 0x0A00); // CI R0
+        memory.WriteWord(0x0100, 0x0280); // CI R0
         memory.WriteWord(0x0102, 0x1234); // Immediate value
         
         var cpu = new Tms9900Cpu(memory);
@@ -150,6 +150,91 @@ public class Tms9900IsaTests
         cpu.Step();
         
         Assert.Equal(cpu.StatusRegister, cpu.ReadRegister(1));
+    }
+
+    [Fact]
+    public void MOV_Indirect_ShouldMoveWordFromMemory()
+    {
+        var memory = new Tms9900Memory();
+        memory.WriteWord(0x0000, 0x2000); // WP
+        memory.WriteWord(0x0002, 0x0100); // PC
+
+        var cpu = new Tms9900Cpu(memory);
+        cpu.Reset();
+        cpu.Start();
+
+        cpu.WriteRegister(1, 0x3000);
+        memory.WriteWord(0x3000, 0xBEEF);
+
+        // MOV *R1, R2
+        memory.WriteWord(0x0100, 0xC091);
+        cpu.Step();
+
+        Assert.Equal((ushort)0xBEEF, cpu.ReadRegister(2));
+    }
+
+    [Fact]
+    public void MOV_AutoIncrement_ShouldAdvanceSourceRegister()
+    {
+        var memory = new Tms9900Memory();
+        memory.WriteWord(0x0000, 0x2000); // WP
+        memory.WriteWord(0x0002, 0x0100); // PC
+
+        var cpu = new Tms9900Cpu(memory);
+        cpu.Reset();
+        cpu.Start();
+
+        cpu.WriteRegister(1, 0x3000);
+        memory.WriteWord(0x3000, 0x1234);
+
+        // MOV *R1+, R2
+        memory.WriteWord(0x0100, 0xC0B1);
+        cpu.Step();
+
+        Assert.Equal((ushort)0x1234, cpu.ReadRegister(2));
+        Assert.Equal((ushort)0x3002, cpu.ReadRegister(1));
+    }
+
+    [Fact]
+    public void MOV_Indexed_ShouldUseDisplacement()
+    {
+        var memory = new Tms9900Memory();
+        memory.WriteWord(0x0000, 0x2000); // WP
+        memory.WriteWord(0x0002, 0x0100); // PC
+
+        var cpu = new Tms9900Cpu(memory);
+        cpu.Reset();
+        cpu.Start();
+
+        memory.WriteWord(0x0200, 0xCAFE);
+
+        // MOV @>0200, R1
+        memory.WriteWord(0x0100, 0xC060);
+        memory.WriteWord(0x0102, 0x0200);
+        cpu.Step();
+
+        Assert.Equal((ushort)0xCAFE, cpu.ReadRegister(1));
+    }
+
+    [Fact]
+    public void MOVB_RegisterToRegister_ShouldUpdateLowByte()
+    {
+        var memory = new Tms9900Memory();
+        memory.WriteWord(0x0000, 0x2000); // WP
+        memory.WriteWord(0x0002, 0x0100); // PC
+
+        var cpu = new Tms9900Cpu(memory);
+        cpu.Reset();
+        cpu.Start();
+
+        cpu.WriteRegister(1, 0xABCD);
+        cpu.WriteRegister(2, 0x1100);
+
+        // MOVB R1, R2
+        memory.WriteWord(0x0100, 0xD081);
+        cpu.Step();
+
+        Assert.Equal((ushort)0x11CD, cpu.ReadRegister(2));
     }
 
     [Fact]
