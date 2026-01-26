@@ -122,7 +122,7 @@ MMIO devices:
 0xF000 (>F000): UART status register (THRE bit 0)
 0xF002 (>F002): UART data register
 
-User code by convention starts at 0x00C0.
+User code by convention starts at 0x0100.
 
 ## Additional Resources
 
