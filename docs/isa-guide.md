@@ -117,10 +117,10 @@ Byte forms (`MOVB`, `AB`, `SB`, `SZCB`, `SOCB`, `CB`) are decoded, but the curre
 The demo program loaded by the monitor is a good reference:
 
 ```
-0200 0005  ; LI R0, 0x0005
-0201 0003  ; LI R1, 0x0003
-0202 FFFF  ; LI R2, 0xFFFF
-0C03       ; STWP R3
+0x0080 0005  ; LI R0, 0x0005
+0x0082 0003  ; LI R1, 0x0003
+0x0084 FFFF  ; LI R2, 0xFFFF
+0x0086       ; STWP R3
 ```
 
 Load these words starting at `0x0100`, set WP/PC vectors, then step through execution to see register updates.

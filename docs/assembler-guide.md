@@ -2,7 +2,7 @@
 
 ## Overview
 
-Tawny Petrel includes a simple assembler that targets the TMS9900 ISA and follows the Petrel monitor conventions. The assembler defaults to **octal** input with familiar radix prefixes and emits Motorola S-records for byte-accurate program loading.
+Tawny Petrel includes a simple assembler that targets the TMS9900 ISA and follows the Petrel monitor conventions. The assembler defaults to **hexadecimal** input with familiar radix prefixes and emits Motorola S-records for byte-accurate program loading.
 
 ## Running the Assembler
 
@@ -51,9 +51,9 @@ Output:  build/hellorld.lst
 
 The assembler follows the Petrel numeric conventions:
 
-- **Octal (default)**: `300`, `100`, `0`
+- **Hexadecimal (default)**: `C0`, `40`, `0`
 - **Decimal**: `#64`
-- **Hexadecimal**: `$1F` or `>1F`
+- **Octal**: `@300`, `@100`, `@0`
 
 This matches the monitor behavior and keeps source code consistent across tools.
 
