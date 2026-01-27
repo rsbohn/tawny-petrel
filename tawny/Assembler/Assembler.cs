@@ -67,17 +67,17 @@ public sealed class Assembler
 
     private static readonly Dictionary<string, ushort> SingleOperandOpcodes = new(StringComparer.OrdinalIgnoreCase)
     {
-        { "BLWP", 0x03C0 },
-        { "CLR", 0x0400 },
-        { "NEG", 0x0440 },
-        { "INV", 0x0480 },
-        { "INC", 0x04C0 },
-        { "DEC", 0x0540 },
-        { "DECT", 0x0580 },
+        { "BLWP", 0x0400 },
+        { "CLR", 0x04C0 },
+        { "NEG", 0x0500 },
+        { "INV", 0x0540 },
+        { "INC", 0x0580 },
         { "INCT", 0x05C0 },
-        { "SWPB", 0x0600 },
-        { "SETO", 0x0640 },
-        { "ABS", 0x0680 }
+        { "DEC", 0x0600 },
+        { "DECT", 0x0640 },
+        { "SWPB", 0x06C0 },
+        { "SETO", 0x0700 },
+        { "ABS", 0x0740 }
     };
 
     private static readonly Dictionary<string, ushort> ImpliedOpcodes = new(StringComparer.OrdinalIgnoreCase)
@@ -88,7 +88,6 @@ public sealed class Assembler
 
     private static readonly Dictionary<string, ushort> Immediate4Opcodes = new(StringComparer.OrdinalIgnoreCase)
     {
-        { "LIMI", 0x0300 }
     };
 
     public AssemblerResult Assemble(string sourcePath, string? outputDir)
@@ -233,6 +232,12 @@ public sealed class Assembler
                 continue;
             }
 
+            if (string.Equals(line.Mnemonic, "LIMI", StringComparison.OrdinalIgnoreCase))
+            {
+                locationCounter = (ushort)(locationCounter + 4);
+                continue;
+            }
+
             if (Immediate4Opcodes.ContainsKey(line.Mnemonic))
             {
                 locationCounter = (ushort)(locationCounter + 2);
@@ -316,7 +321,10 @@ public sealed class Assembler
         {
             if (line.IsEmpty)
             {
-                listingLines.Add(string.Empty);
+                if (!IsCommentOnlyLine(line.Original))
+                {
+                    listingLines.Add(string.Empty);
+                }
                 continue;
             }
 
@@ -424,6 +432,27 @@ public sealed class Assembler
                 }
 
                 ushort instruction = (ushort)(immediateOpcode | (ushort)reg);
+                EmitWord(outputBytes, locationCounter, instruction);
+                EmitWord(outputBytes, (ushort)(locationCounter + 2), immediateValue);
+                listingLines.Add(FormatListingLine(locationCounter, new[] { instruction, immediateValue }, line.Original));
+                locationCounter += 4;
+                continue;
+            }
+
+            if (string.Equals(line.Mnemonic, "LIMI", StringComparison.OrdinalIgnoreCase))
+            {
+                var operands = SplitOperands(line.OperandText);
+                if (operands.Count != 1)
+                {
+                    throw new InvalidOperationException($"Line {line.LineNumber}: Expected immediate for LIMI.");
+                }
+
+                if (!TryEvaluate(operands[0], symbols, out ushort immediateValue))
+                {
+                    throw new InvalidOperationException($"Line {line.LineNumber}: Invalid immediate '{operands[0]}'.");
+                }
+
+                ushort instruction = 0x0300;
                 EmitWord(outputBytes, locationCounter, instruction);
                 EmitWord(outputBytes, (ushort)(locationCounter + 2), immediateValue);
                 listingLines.Add(FormatListingLine(locationCounter, new[] { instruction, immediateValue }, line.Original));
@@ -812,8 +841,8 @@ public sealed class Assembler
             return trimmedSource;
         }
 
-        string addrText = FormatOctal(address.Value);
-        string dataText = string.Join(" ", words.Select(FormatOctal));
+        string addrText = FormatHex(address.Value);
+        string dataText = string.Join(" ", words.Select(FormatHex));
         if (string.IsNullOrEmpty(dataText))
         {
             return $"{addrText}  {trimmedSource}";
@@ -824,13 +853,13 @@ public sealed class Assembler
     private static string FormatSymbols(Dictionary<string, ushort> symbols)
     {
         var lines = symbols.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(pair => $"{pair.Key} {FormatOctal(pair.Value)}");
+            .Select(pair => $"{pair.Key} {FormatHex(pair.Value)}");
         return string.Join(Environment.NewLine, lines);
     }
 
-    private static string FormatOctal(ushort value)
+    private static string FormatHex(ushort value)
     {
-        return Convert.ToString(value, 8).PadLeft(6, '0');
+        return Convert.ToString(value, 16).PadLeft(4, '0').ToUpperInvariant();
     }
 
     private static bool TryParseLiteral(string token, out ushort value)
@@ -840,9 +869,13 @@ public sealed class Assembler
 
         string digits = token;
         char prefix = token[0];
-        if (prefix == '#' || prefix == '$' || prefix == '>')
+        if (prefix == '#' || prefix == '$' || prefix == '>' || prefix == '%')
         {
             digits = token.Substring(1);
+        }
+        else
+        {
+            prefix = '\0';
         }
 
         if (string.IsNullOrWhiteSpace(digits)) return false;
@@ -852,12 +885,17 @@ public sealed class Assembler
             return ushort.TryParse(digits, out value);
         }
 
-        if (prefix == '$' || prefix == '>')
+        if (prefix == '%')
+        {
+            return TryParseOctal(digits, out value);
+        }
+
+        if (prefix == '$' || prefix == '>' || prefix == '\0')
         {
             return ushort.TryParse(digits, System.Globalization.NumberStyles.HexNumber, null, out value);
         }
 
-        return ushort.TryParse(digits, out value);
+        return false;
     }
 
     private static bool TryParseWideLiteral(string token, out ulong value)
@@ -867,9 +905,13 @@ public sealed class Assembler
 
         string digits = token;
         char prefix = token[0];
-        if (prefix == '#' || prefix == '$' || prefix == '>')
+        if (prefix == '#' || prefix == '$' || prefix == '>' || prefix == '%')
         {
             digits = token.Substring(1);
+        }
+        else
+        {
+            prefix = '\0';
         }
 
         if (string.IsNullOrWhiteSpace(digits)) return false;
@@ -879,12 +921,17 @@ public sealed class Assembler
             return ulong.TryParse(digits, out value);
         }
 
-        if (prefix == '$' || prefix == '>')
+        if (prefix == '%')
+        {
+            return TryParseOctalWide(digits, out value);
+        }
+
+        if (prefix == '$' || prefix == '>' || prefix == '\0')
         {
             return ulong.TryParse(digits, System.Globalization.NumberStyles.HexNumber, null, out value);
         }
 
-        return ulong.TryParse(digits, out value);
+        return false;
     }
 
     private static bool TryParseOctal(string text, out ushort value)
@@ -916,6 +963,11 @@ public sealed class Assembler
 
     private static ParsedLine ParseLine(string line, int lineNumber)
     {
+        if (!string.IsNullOrEmpty(line) && line[0] == '*')
+        {
+            return ParsedLine.Empty(lineNumber, line);
+        }
+
         string stripped = StripComment(line);
         if (string.IsNullOrWhiteSpace(stripped))
         {
@@ -981,11 +1033,24 @@ public sealed class Assembler
         return commentIndex >= 0 ? line.Substring(0, commentIndex) : line;
     }
 
+    private static bool IsCommentOnlyLine(string line)
+    {
+        if (string.IsNullOrEmpty(line)) return false;
+
+        if (line[0] == '*') return true;
+
+        if (line.IndexOf(';') < 0) return false;
+
+        string stripped = StripComment(line);
+        return string.IsNullOrWhiteSpace(stripped);
+    }
+
     private static bool IsDirectiveOrMnemonic(string token)
     {
         return Directives.Contains(token) ||
                ImmediateOpcodes.ContainsKey(token) ||
                Immediate4Opcodes.ContainsKey(token) ||
+               string.Equals(token, "LIMI", StringComparison.OrdinalIgnoreCase) ||
                Format2Opcodes.ContainsKey(token) ||
                RegDestOpcodes.ContainsKey(token) ||
                SingleOperandOpcodes.ContainsKey(token) ||

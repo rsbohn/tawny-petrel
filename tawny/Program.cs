@@ -36,20 +36,21 @@ class Program
         Console.WriteLine("Commands:");
         Console.WriteLine("  s          - Execute single step");
         Console.WriteLine("  r          - Reset CPU");
-        Console.WriteLine("  x <addr> [n]   - Examine memory at address (octal)");
+        Console.WriteLine("  x <addr> [n]   - Examine memory at address (hex)");
         Console.WriteLine("  exam <addr> - Alias for x");
-        Console.WriteLine("  d <addr> <val...> - Deposit words into memory (octal)");
+        Console.WriteLine("  d <addr> <val...> - Deposit words into memory (hex)");
         Console.WriteLine("  dep <addr> <val...> - Alias for d");
         Console.WriteLine("  demo       - Run the demo program");
         Console.WriteLine("  regs       - Show all registers");
         Console.WriteLine("  . dup drop swap over + - and or xor invert @ !");
         Console.WriteLine("  load <file> - Load SREC file into memory");
-        Console.WriteLine("  boot [file] - Load SREC (optional) and set WP/PC from 000000-000003");
-        Console.WriteLine("  dis <addr> [count] - Disassemble from address (octal)");
-        Console.WriteLine("  trace [n]  - Trace execution for n steps (octal)");
-        Console.WriteLine("  c [n]      - Continue execution (optional step count, octal)");
+        Console.WriteLine("  boot [file] - Load SREC (optional) and set WP/PC from 0000-0003");
+        Console.WriteLine("  dis <addr> [count] - Disassemble from address (hex)");
+        Console.WriteLine("  trace [n]  - Trace execution for n steps (hex)");
+        Console.WriteLine("  c [n]      - Continue execution (optional step count, hex)");
         Console.WriteLine("  help       - Show this help");
         Console.WriteLine("  q          - Quit");
+        Console.WriteLine("  numeric literals: hex default, % for octal, # for decimal");
         Console.WriteLine();
 
         bool running = true;
@@ -92,13 +93,13 @@ class Program
                 case "dump":
                     if (parts.Length > 1)
                     {
-                        if (TryParseOctalUShort(parts[1], out ushort addr))
+                        if (TryParseLiteral(parts[1], out ushort addr))
                         {
                             addr = (ushort)(addr & 0xFFFE);
                             int countWords = 0x10;
                             if (parts.Length > 2)
                             {
-                                if (!TryParseOctalUShort(parts[2], out ushort parsedCount))
+                                if (!TryParseLiteral(parts[2], out ushort parsedCount))
                                 {
                                     Console.WriteLine($"Invalid count: {parts[2]}");
                                     break;
@@ -106,24 +107,24 @@ class Program
                                 countWords = parsedCount;
                             }
 
-                            Console.WriteLine($"Memory at 0o{Convert.ToString(addr, 8).PadLeft(6, '0')}:");
+                            Console.WriteLine($"Memory at {FormatHex(addr)}:");
                             for (int offset = 0; offset < countWords; offset += 8)
                             {
                                 ushort lineAddr = (ushort)(addr + (offset * 2));
                                 var lineText = new System.Text.StringBuilder();
-                                lineText.Append($"  {Convert.ToString(lineAddr, 8).PadLeft(6, '0')}:");
+                                lineText.Append($"  {FormatHex(lineAddr)}:");
                                 int wordsInLine = Math.Min(8, countWords - offset);
                                 for (int i = 0; i < wordsInLine; i++)
                                 {
                                     ushort word = memory.ReadWord((ushort)(lineAddr + i * 2));
-                                    lineText.Append($" {Convert.ToString(word, 8).PadLeft(6, '0')}");
+                                    lineText.Append($" {FormatHex(word)}");
                                 }
                                 Console.WriteLine(lineText.ToString());
                             }
                         }
                         else
                         {
-                            Console.WriteLine("Invalid address. Use octal format (e.g., 2000)");
+                            Console.WriteLine("Invalid address. Use hex (e.g., C000), % for octal, # for decimal.");
                         }
                     }
                     else
@@ -137,14 +138,14 @@ class Program
                 case "deposit":
                     if (parts.Length > 2)
                     {
-                        if (TryParseOctalUShort(parts[1], out ushort addr))
+                        if (TryParseLiteral(parts[1], out ushort addr))
                         {
                             addr = (ushort)(addr & 0xFFFE);
                             ushort writeAddr = addr;
                             int written = 0;
                             for (int i = 2; i < parts.Length; i++)
                             {
-                                if (!TryParseOctalUShort(parts[i], out ushort value))
+                                if (!TryParseLiteral(parts[i], out ushort value))
                                 {
                                     Console.WriteLine($"Invalid value: {parts[i]}");
                                     written = 0;
@@ -157,12 +158,12 @@ class Program
 
                             if (written > 0)
                             {
-                                Console.WriteLine($"Wrote {written} word(s) starting at 0o{Convert.ToString(addr, 8).PadLeft(6, '0')}.");
+                                Console.WriteLine($"Wrote {written} word(s) starting at {FormatHex(addr)}.");
                             }
                         }
                         else
                         {
-                            Console.WriteLine("Invalid address. Use octal format (e.g., 2000)");
+                            Console.WriteLine("Invalid address. Use hex (e.g., C000), % for octal, # for decimal.");
                         }
                     }
                     else
@@ -208,7 +209,7 @@ class Program
                     {
                         if (parts.Length > 1)
                         {
-                            if (!TryParseOctalUShort(parts[1], out ushort count))
+                            if (!TryParseLiteral(parts[1], out ushort count))
                             {
                                 Console.WriteLine($"Invalid count: {parts[1]}");
                                 break;
@@ -247,7 +248,7 @@ class Program
                         Console.WriteLine("Usage: dis <address> [count]");
                         break;
                     }
-                    if (!TryParseOctalUShort(parts[1], out ushort disAddr))
+                    if (!TryParseLiteral(parts[1], out ushort disAddr))
                     {
                         Console.WriteLine($"Invalid address: {parts[1]}");
                         break;
@@ -255,7 +256,7 @@ class Program
                     int disCount = 1;
                     if (parts.Length > 2)
                     {
-                        if (!TryParseOctalUShort(parts[2], out ushort parsedCount))
+                        if (!TryParseLiteral(parts[2], out ushort parsedCount))
                         {
                             Console.WriteLine($"Invalid count: {parts[2]}");
                             break;
@@ -270,7 +271,7 @@ class Program
                     int traceCount = 1;
                     if (parts.Length > 1)
                     {
-                        if (!TryParseOctalUShort(parts[1], out ushort parsedCount))
+                        if (!TryParseLiteral(parts[1], out ushort parsedCount))
                         {
                             Console.WriteLine($"Invalid count: {parts[1]}");
                             break;
@@ -288,7 +289,7 @@ class Program
                         ushort instruction = memory.ReadWord(pc);
                         var dis = DisassembleInstruction(memory, pc, instruction);
                         cpu.Step();
-                        Console.WriteLine($"{FormatOctal(pc)}: {FormatOctal(instruction)} {dis.Text} -> {FormatState(cpu)}");
+                        Console.WriteLine($"{FormatHex(pc)}: {FormatHex(instruction)} {dis.Text} -> {FormatState(cpu)}");
                     }
                     break;
 
@@ -298,9 +299,9 @@ class Program
 
                 case "regs":
                 case "registers":
-                    Console.WriteLine($"PC: {FormatOctal(cpu.ProgramCounter)}");
-                    Console.WriteLine($"WP: {FormatOctal(cpu.WorkspacePointer)}");
-                    Console.WriteLine($"ST: {FormatOctal(cpu.StatusRegister)}");
+                    Console.WriteLine($"PC: {FormatHex(cpu.ProgramCounter)}");
+                    Console.WriteLine($"WP: {FormatHex(cpu.WorkspacePointer)}");
+                    Console.WriteLine($"ST: {FormatHex(cpu.StatusRegister)}");
                     Console.WriteLine(FormatRegisterLine(cpu, 0, 8));
                     Console.WriteLine(FormatRegisterLine(cpu, 8, 16));
                     break;
@@ -329,20 +330,21 @@ class Program
         Console.WriteLine("Commands:");
         Console.WriteLine("  s          - Execute single step");
         Console.WriteLine("  r          - Reset CPU");
-        Console.WriteLine("  x <addr> [n]   - Examine memory at address (octal)");
+        Console.WriteLine("  x <addr> [n]   - Examine memory at address (hex)");
         Console.WriteLine("  exam <addr> - Alias for x");
-        Console.WriteLine("  d <addr> <val...> - Deposit words into memory (octal)");
+        Console.WriteLine("  d <addr> <val...> - Deposit words into memory (hex)");
         Console.WriteLine("  dep <addr> <val...> - Alias for d");
         Console.WriteLine("  demo       - Run the demo program");
         Console.WriteLine("  regs       - Show all registers");
         Console.WriteLine("  . dup drop swap over + - and or xor invert @ !");
         Console.WriteLine("  load <file> - Load SREC file into memory");
-        Console.WriteLine("  boot [file] - Load SREC (optional) and set WP/PC from 000000-000003");
-        Console.WriteLine("  dis <addr> [count] - Disassemble from address (octal)");
-        Console.WriteLine("  trace [n]  - Trace execution for n steps (octal)");
-        Console.WriteLine("  c [n]      - Continue execution (optional step count, octal)");
+        Console.WriteLine("  boot [file] - Load SREC (optional) and set WP/PC from 0000-0003");
+        Console.WriteLine("  dis <addr> [count] - Disassemble from address (hex)");
+        Console.WriteLine("  trace [n]  - Trace execution for n steps (hex)");
+        Console.WriteLine("  c [n]      - Continue execution (optional step count, hex)");
         Console.WriteLine("  help       - Show this help");
         Console.WriteLine("  q          - Quit");
+        Console.WriteLine("  numeric literals: hex default, % for octal, # for decimal");
     }
 
     static bool TryLoadSrec(string path, Tms9900Memory memory)
@@ -380,7 +382,7 @@ class Program
         {
             ushort instruction = memory.ReadWord(pc);
             var result = DisassembleInstruction(memory, pc, instruction);
-            Console.WriteLine($"{FormatOctal(pc)}: {FormatOctal(instruction)} {result.Text}");
+            Console.WriteLine($"{FormatHex(pc)}: {FormatHex(instruction)} {result.Text}");
             pc = (ushort)(pc + (result.Words * 2));
         }
     }
@@ -414,7 +416,7 @@ class Program
         {
             int reg = (instruction >> 6) & 0xF;
             int count = instruction & 0xF;
-            return new DisasmResult($"{shiftMnemonic} {FormatRegister(reg)}, {FormatOctal((ushort)count)}", 1);
+            return new DisasmResult($"{shiftMnemonic} {FormatRegister(reg)}, {FormatHex((ushort)count)}", 1);
         }
 
         return new DisasmResult("DATA", 1);
@@ -444,7 +446,8 @@ class Program
         }
         if ((instruction & 0xFFF0) == 0x0300)
         {
-            return new DisasmResult($"LIMI {FormatOctal((ushort)(instruction & 0xF))}", 1);
+            ushort immediate = memory.ReadWord((ushort)(pc + 2));
+            return new DisasmResult($"LIMI {FormatHex(immediate)}", 2);
         }
         if ((instruction & 0xFFC0) == 0x0340)
         {
@@ -454,33 +457,25 @@ class Program
         {
             return new DisasmResult("RTWP", 1);
         }
-        if ((instruction & 0xFFC0) == 0x03C0)
+        if ((instruction & 0xFFC0) == 0x0400)
         {
             return DisassembleSingleOperand(memory, pc, instruction, "BLWP");
         }
-        if ((instruction & 0xFFC0) == 0x0400)
+        if ((instruction & 0xFFC0) == 0x04C0)
         {
             return DisassembleSingleOperand(memory, pc, instruction, "CLR");
         }
-        if ((instruction & 0xFFC0) == 0x0440)
+        if ((instruction & 0xFFC0) == 0x0500)
         {
             return DisassembleSingleOperand(memory, pc, instruction, "NEG");
         }
-        if ((instruction & 0xFFC0) == 0x0480)
+        if ((instruction & 0xFFC0) == 0x0540)
         {
             return DisassembleSingleOperand(memory, pc, instruction, "INV");
         }
-        if ((instruction & 0xFFC0) == 0x04C0)
-        {
-            return DisassembleSingleOperand(memory, pc, instruction, "INC");
-        }
-        if ((instruction & 0xFFC0) == 0x0540)
-        {
-            return DisassembleSingleOperand(memory, pc, instruction, "DEC");
-        }
         if ((instruction & 0xFFC0) == 0x0580)
         {
-            return DisassembleSingleOperand(memory, pc, instruction, "DECT");
+            return DisassembleSingleOperand(memory, pc, instruction, "INC");
         }
         if ((instruction & 0xFFC0) == 0x05C0)
         {
@@ -488,13 +483,21 @@ class Program
         }
         if ((instruction & 0xFFC0) == 0x0600)
         {
-            return DisassembleSingleOperand(memory, pc, instruction, "SWPB");
+            return DisassembleSingleOperand(memory, pc, instruction, "DEC");
         }
         if ((instruction & 0xFFC0) == 0x0640)
         {
+            return DisassembleSingleOperand(memory, pc, instruction, "DECT");
+        }
+        if ((instruction & 0xFFC0) == 0x06C0)
+        {
+            return DisassembleSingleOperand(memory, pc, instruction, "SWPB");
+        }
+        if ((instruction & 0xFFC0) == 0x0700)
+        {
             return DisassembleSingleOperand(memory, pc, instruction, "SETO");
         }
-        if ((instruction & 0xFFC0) == 0x0680)
+        if ((instruction & 0xFFC0) == 0x0740)
         {
             return DisassembleSingleOperand(memory, pc, instruction, "ABS");
         }
@@ -510,7 +513,7 @@ class Program
         {
             int xop = (instruction >> 6) & 0xF;
             int reg = instruction & 0xF;
-            return new DisasmResult($"XOP {FormatRegister(reg)}, {FormatOctal((ushort)xop)}", 1);
+            return new DisasmResult($"XOP {FormatRegister(reg)}, {FormatHex((ushort)xop)}", 1);
         }
 
         return new DisasmResult("DATA", 1);
@@ -520,7 +523,7 @@ class Program
     {
         int reg = instruction & 0xF;
         ushort immediate = memory.ReadWord((ushort)(pc + 2));
-        return new DisasmResult($"{mnemonic} {FormatRegister(reg)}, {FormatOctal(immediate)}", 2);
+        return new DisasmResult($"{mnemonic} {FormatRegister(reg)}, {FormatHex(immediate)}", 2);
     }
 
     static DisasmResult DisassembleJump(ushort pc, ushort instruction)
@@ -532,7 +535,7 @@ class Program
         }
         sbyte displacement = unchecked((sbyte)(instruction & 0xFF));
         ushort target = (ushort)(pc + 2 + (displacement * 2));
-        return new DisasmResult($"{mnemonic} {FormatOctal(target)}", 1);
+        return new DisasmResult($"{mnemonic} {FormatHex(target)}", 1);
     }
 
     static bool JumpMnemonic(int opcode, out string mnemonic)
@@ -645,9 +648,9 @@ class Program
                 wordsUsed++;
                 if (reg == 0)
                 {
-                    return $"@{FormatOctal(displacement)}";
+                    return $"@{FormatHex(displacement)}";
                 }
-                return $"@{FormatOctal(displacement)}({FormatRegister(reg)})";
+                return $"@{FormatHex(displacement)}({FormatRegister(reg)})";
             }
             case 3:
                 return $"*{FormatRegister(reg)}+";
@@ -747,10 +750,10 @@ class Program
         Console.WriteLine($"Final state: {FormatState(cpu)}");
         Console.WriteLine();
         Console.WriteLine("Expected results:");
-        Console.WriteLine("  R0 = 000005");
-        Console.WriteLine("  R1 = 000003");
-        Console.WriteLine("  R2 = 177777");
-        Console.WriteLine("  R3 = 002000 (workspace pointer)");
+        Console.WriteLine("  R0 = 0005");
+        Console.WriteLine("  R1 = 0003");
+        Console.WriteLine("  R2 = FFFF");
+        Console.WriteLine("  R3 = 2000 (workspace pointer)");
         Console.WriteLine();
 
         // Verify results
@@ -760,10 +763,10 @@ class Program
         ushort r3 = cpu.ReadRegister(3);
 
         Console.WriteLine("Actual results:");
-        Console.WriteLine($"  R0 = {FormatOctal(r0)}");
-        Console.WriteLine($"  R1 = {FormatOctal(r1)}");
-        Console.WriteLine($"  R2 = {FormatOctal(r2)}");
-        Console.WriteLine($"  R3 = {FormatOctal(r3)}");
+        Console.WriteLine($"  R0 = {FormatHex(r0)}");
+        Console.WriteLine($"  R1 = {FormatHex(r1)}");
+        Console.WriteLine($"  R2 = {FormatHex(r2)}");
+        Console.WriteLine($"  R3 = {FormatHex(r3)}");
         Console.WriteLine();
 
         bool success = (r0 == 0x0005 && r1 == 0x0003 && r2 == 0xFFFF && r3 == 0x2000);
@@ -791,7 +794,7 @@ class Program
             {
                 case ".":
                     if (!PopStack(memory, out ushort value)) return false;
-                    Console.WriteLine(FormatOctal(value));
+                    Console.WriteLine(FormatHex(value));
                     break;
                 case "dup":
                     if (!PeekStack(memory, out ushort top)) return false;
@@ -866,9 +869,13 @@ class Program
 
         char prefix = token[0];
         string digits = token;
-        if (prefix == '#' || prefix == '$' || prefix == '>')
+        if (prefix == '#' || prefix == '$' || prefix == '>' || prefix == '%')
         {
             digits = token.Substring(1);
+        }
+        else
+        {
+            prefix = '\0';
         }
 
         if (string.IsNullOrWhiteSpace(digits)) return false;
@@ -878,12 +885,17 @@ class Program
             return ushort.TryParse(digits, out value);
         }
 
-        if (prefix == '$' || prefix == '>')
+        if (prefix == '%')
         {
-            return ushort.TryParse(digits, System.Globalization.NumberStyles.HexNumber, null, out value);
+            return TryParseOctalUShort(digits, out value);
         }
 
-        return TryParseOctalUShort(token, out value);
+        if (prefix == '$' || prefix == '>' || prefix == '\0')
+        {
+            return TryParseHexUShort(digits, out value);
+        }
+
+        return false;
     }
 
     static bool PushStack(Tms9900Memory memory, ushort value)
@@ -941,9 +953,17 @@ class Program
         return true;
     }
 
-    static string FormatOctal(ushort value)
+    static bool TryParseHexUShort(string text, out ushort value)
     {
-        return Convert.ToString(value, 8).PadLeft(6, '0');
+        value = 0;
+        if (string.IsNullOrWhiteSpace(text)) return false;
+
+        return ushort.TryParse(text.Trim(), System.Globalization.NumberStyles.HexNumber, null, out value);
+    }
+
+    static string FormatHex(ushort value)
+    {
+        return Convert.ToString(value, 16).PadLeft(4, '0').ToUpperInvariant();
     }
 
     static string FormatRegisterLine(Tms9900Cpu cpu, int start, int end)
@@ -951,12 +971,12 @@ class Program
         var lineText = new System.Text.StringBuilder();
         for (int i = start; i < end; i++)
         {
-            string regLabel = Convert.ToString(i, 8).PadLeft(2, '0');
+            string regLabel = i.ToString();
             if (i > start)
             {
                 lineText.Append(' ');
             }
-            lineText.Append($"R{regLabel}={FormatOctal(cpu.ReadRegister(i))}");
+            lineText.Append($"R{regLabel}={FormatHex(cpu.ReadRegister(i))}");
         }
 
         return lineText.ToString();
@@ -964,9 +984,9 @@ class Program
 
     static string FormatState(Tms9900Cpu cpu)
     {
-        return $"PC={FormatOctal(cpu.ProgramCounter)} WP={FormatOctal(cpu.WorkspacePointer)} " +
-               $"ST={FormatOctal(cpu.StatusRegister)} R0={FormatOctal(cpu.ReadRegister(0))} " +
-               $"R1={FormatOctal(cpu.ReadRegister(1))} R2={FormatOctal(cpu.ReadRegister(2))}";
+        return $"PC={FormatHex(cpu.ProgramCounter)} WP={FormatHex(cpu.WorkspacePointer)} " +
+               $"ST={FormatHex(cpu.StatusRegister)} R0={FormatHex(cpu.ReadRegister(0))} " +
+               $"R1={FormatHex(cpu.ReadRegister(1))} R2={FormatHex(cpu.ReadRegister(2))}";
     }
 
     private sealed class UartKeyboardListener : IDisposable

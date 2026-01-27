@@ -26,6 +26,7 @@ bld/
 *.lst
 *.obj
 build/
+scratch/
 
 # .NET Core
 project.lock.json

@@ -21,16 +21,16 @@ public class AssemblerTests
         var assembler = new Assembler();
         AssemblerResult result = assembler.AssembleLines(lines, "test.asm");
 
-        AssertWord(result, 0x0008, 0x0001);
-        AssertWord(result, 0x000A, 0x0002);
-        AssertWord(result, 0x000C, 0x0102);
-        AssertWord(result, 0x000E, 0x0304);
-        AssertWord(result, 0x0010, 0x0102);
-        AssertWord(result, 0x0012, 0x0304);
-        AssertWord(result, 0x0014, 0x0506);
-        AssertWord(result, 0x0016, 0x0708);
-        AssertWord(result, 0x0018, 0x0048);
-        AssertWord(result, 0x001A, 0x0049);
+        AssertWord(result, 0x0010, 0x0001);
+        AssertWord(result, 0x0012, 0x0002);
+        AssertWord(result, 0x0014, 0x0102);
+        AssertWord(result, 0x0016, 0x0304);
+        AssertWord(result, 0x0018, 0x0102);
+        AssertWord(result, 0x001A, 0x0304);
+        AssertWord(result, 0x001C, 0x0506);
+        AssertWord(result, 0x001E, 0x0708);
+        AssertWord(result, 0x0020, 0x0048);
+        AssertWord(result, 0x0022, 0x0049);
     }
 
     [Fact]
@@ -75,9 +75,9 @@ public class AssemblerTests
         AssertWord(result, 0x009E, 0x10F6);
         AssertWord(result, 0x0200, 0x0048);
 
-        Assert.Contains("TOP 000200", result.SymbolText);
-        Assert.Contains("PR1 000214", result.SymbolText);
-        Assert.Contains("TST 000230", result.SymbolText);
+        Assert.Contains("TOP 0080", result.SymbolText);
+        Assert.Contains("PR1 008C", result.SymbolText);
+        Assert.Contains("TST 0098", result.SymbolText);
     }
 
     private static void AssertWord(AssemblerResult result, ushort address, ushort expected)
