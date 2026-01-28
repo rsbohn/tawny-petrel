@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace tawny;
 
 /// <summary>
@@ -12,8 +14,11 @@ public class Tms9900Memory
     private const ushort UartTxDataAddress = 0xF002; // THRL
     private const ushort UartRxDataAddress = 0xF004; // RRD
     private const ushort UartRxResetAddress = 0xF006; // DRR
+    private const int UartBitsPerChar = 10; // start + 8 data + stop
+    private const double UartBaudRate = 300.0;
     private byte _uartRxByte;
     private bool _uartRxAvailable;
+    private long _uartTxReadyTimestamp;
 
     public Tms9900Memory()
     {
@@ -31,7 +36,7 @@ public class Tms9900Memory
 
         if (address == UartTxStatusAddress)
         {
-            return 0x0001;
+            return IsUartTxBusy() ? (ushort)0x0001 : (ushort)0x0000;
         }
         if (address == UartRxDataAddress)
         {
@@ -59,6 +64,7 @@ public class Tms9900Memory
         {
             Console.Write((char)(value & 0x00FF));
             Console.Out.Flush();
+            ScheduleUartTxReady();
             return;
         }
         if (address == UartRxResetAddress)
@@ -80,7 +86,7 @@ public class Tms9900Memory
         // No bounds check needed: ushort max (0xFFFF = 65535) is always < MemorySize (0x10000 = 65536)
         if (address == UartTxStatusAddress)
         {
-            return 0x01;
+            return IsUartTxBusy() ? (byte)0x01 : (byte)0x00;
         }
         if (address == UartRxDataAddress)
         {
@@ -104,6 +110,7 @@ public class Tms9900Memory
         {
             Console.Write((char)value);
             Console.Out.Flush();
+            ScheduleUartTxReady();
             return;
         }
         if (address == UartRxResetAddress)
@@ -121,6 +128,19 @@ public class Tms9900Memory
     {
         _uartRxByte = value;
         _uartRxAvailable = true;
+    }
+
+    private bool IsUartTxBusy()
+    {
+        return Stopwatch.GetTimestamp() < _uartTxReadyTimestamp;
+    }
+
+    private void ScheduleUartTxReady()
+    {
+        long now = Stopwatch.GetTimestamp();
+        long ticksPerChar = (long)Math.Ceiling(Stopwatch.Frequency * (UartBitsPerChar / UartBaudRate));
+        long start = Math.Max(now, _uartTxReadyTimestamp);
+        _uartTxReadyTimestamp = start + ticksPerChar;
     }
 
     /// <summary>

@@ -6,7 +6,8 @@
     RORG >1000
     LI 2, >0FFF
     LI 3, >0001
-    ; now add R3 to R2
+; add 1 to R2 until carry is set
+LOOP:
     A 3, 2
+    JNC LOOP
     IDLE
-

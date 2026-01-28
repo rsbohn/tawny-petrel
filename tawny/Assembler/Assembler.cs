@@ -10,6 +10,7 @@ public sealed class Assembler
         "EQU",
         "ORG",
         "RORG",
+        "AORG",
         "TITL",
         "DW",
         "DD",
@@ -47,6 +48,8 @@ public sealed class Assembler
 
     private static readonly Dictionary<string, ushort> Format2Opcodes = new(StringComparer.OrdinalIgnoreCase)
     {
+        { "A", 0xA000 },
+        { "AB", 0xB000 },
         { "MOV", 0xC000 },
         { "MOVB", 0xD000 }
     };
@@ -59,8 +62,6 @@ public sealed class Assembler
         { "SB", 0x07 },
         { "C", 0x08 },
         { "CB", 0x09 },
-        { "A", 0x0A },
-        { "AB", 0x0B },
         { "SOC", 0x0E },
         { "SOCB", 0x0F }
     };
@@ -68,6 +69,7 @@ public sealed class Assembler
     private static readonly Dictionary<string, ushort> SingleOperandOpcodes = new(StringComparer.OrdinalIgnoreCase)
     {
         { "BLWP", 0x0400 },
+        { "B", 0x0440 },
         { "CLR", 0x04C0 },
         { "NEG", 0x0500 },
         { "INV", 0x0540 },
@@ -75,6 +77,7 @@ public sealed class Assembler
         { "INCT", 0x05C0 },
         { "DEC", 0x0600 },
         { "DECT", 0x0640 },
+        { "BL", 0x0680 },
         { "SWPB", 0x06C0 },
         { "SETO", 0x0700 },
         { "ABS", 0x0740 }
@@ -152,7 +155,7 @@ public sealed class Assembler
 
                 if (!TryEvaluate(line.OperandText, symbols, out ushort equValue))
                 {
-                    errors.Add($"Line {line.LineNumber}: Invalid EQU value '{line.OperandText}'.");
+                    errors.Add(UndefinedOrInvalid(line.OperandText, line.LineNumber, "Invalid EQU value"));
                     continue;
                 }
 
@@ -183,7 +186,7 @@ public sealed class Assembler
             {
                 if (!TryEvaluate(line.OperandText, symbols, out ushort originValue))
                 {
-                    errors.Add($"Line {line.LineNumber}: Invalid origin value '{line.OperandText}'.");
+                    errors.Add(UndefinedOrInvalid(line.OperandText, line.LineNumber, "Invalid origin value"));
                 }
                 else
                 {
@@ -196,7 +199,7 @@ public sealed class Assembler
             {
                 if (!TryEvaluate(line.OperandText, symbols, out ushort bssBytes))
                 {
-                    errors.Add($"Line {line.LineNumber}: Invalid BSS size '{line.OperandText}'.");
+                    errors.Add(UndefinedOrInvalid(line.OperandText, line.LineNumber, "Invalid BSS size"));
                 }
                 else
                 {
@@ -245,6 +248,12 @@ public sealed class Assembler
             }
 
             if (ImpliedOpcodes.ContainsKey(line.Mnemonic))
+            {
+                locationCounter = (ushort)(locationCounter + 2);
+                continue;
+            }
+
+            if (string.Equals(line.Mnemonic, "RT", StringComparison.OrdinalIgnoreCase))
             {
                 locationCounter = (ushort)(locationCounter + 2);
                 continue;
@@ -403,7 +412,7 @@ public sealed class Assembler
                     {
                         if (!TryEvaluateWide(operand, symbols, wordSize, out ulong value))
                         {
-                            throw new InvalidOperationException($"Line {line.LineNumber}: Invalid data value '{operand}'.");
+                            throw new InvalidOperationException(UndefinedOrInvalid(operand, line.LineNumber, "Invalid data value"));
                         }
                         foreach (ushort word in ExpandWideValue(value, wordSize))
                         {
@@ -428,7 +437,7 @@ public sealed class Assembler
                 int reg = ParseRegister(operands[0], line.LineNumber);
                 if (!TryEvaluate(operands[1], symbols, out ushort immediateValue))
                 {
-                    throw new InvalidOperationException($"Line {line.LineNumber}: Invalid immediate '{operands[1]}'.");
+                    throw new InvalidOperationException(UndefinedOrInvalid(operands[1], line.LineNumber, "Invalid immediate"));
                 }
 
                 ushort instruction = (ushort)(immediateOpcode | (ushort)reg);
@@ -449,7 +458,7 @@ public sealed class Assembler
 
                 if (!TryEvaluate(operands[0], symbols, out ushort immediateValue))
                 {
-                    throw new InvalidOperationException($"Line {line.LineNumber}: Invalid immediate '{operands[0]}'.");
+                    throw new InvalidOperationException(UndefinedOrInvalid(operands[0], line.LineNumber, "Invalid immediate"));
                 }
 
                 ushort instruction = 0x0300;
@@ -470,7 +479,7 @@ public sealed class Assembler
 
                 if (!TryEvaluate(operands[0], symbols, out ushort imm4Value) || imm4Value > 0xF)
                 {
-                    throw new InvalidOperationException($"Line {line.LineNumber}: Invalid immediate '{operands[0]}'.");
+                    throw new InvalidOperationException(UndefinedOrInvalid(operands[0], line.LineNumber, "Invalid immediate"));
                 }
 
                 ushort instruction = (ushort)(immediate4Opcode | imm4Value);
@@ -580,6 +589,15 @@ public sealed class Assembler
                 continue;
             }
 
+            if (string.Equals(line.Mnemonic, "RT", StringComparison.OrdinalIgnoreCase))
+            {
+                const ushort rtInstruction = 0x045B; // B *R11
+                EmitWord(outputBytes, locationCounter, rtInstruction);
+                listingLines.Add(FormatListingLine(locationCounter, new[] { rtInstruction }, line.Original));
+                locationCounter += 2;
+                continue;
+            }
+
             if (JumpOpcodes.TryGetValue(line.Mnemonic, out int jumpOpcode))
             {
                 var operands = SplitOperands(line.OperandText);
@@ -590,7 +608,7 @@ public sealed class Assembler
 
                 if (!TryEvaluate(operands[0], symbols, out ushort target))
                 {
-                    throw new InvalidOperationException($"Line {line.LineNumber}: Invalid jump target '{operands[0]}'.");
+                    throw new InvalidOperationException(UndefinedOrInvalid(operands[0], line.LineNumber, "Invalid jump target"));
                 }
 
                 int delta = target - (locationCounter + 2);
@@ -626,7 +644,8 @@ public sealed class Assembler
     private static bool IsOriginDirective(string mnemonic)
     {
         return string.Equals(mnemonic, "ORG", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(mnemonic, "RORG", StringComparison.OrdinalIgnoreCase);
+               string.Equals(mnemonic, "RORG", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(mnemonic, "AORG", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsDataDirective(string mnemonic, out int wordSize)
@@ -740,7 +759,7 @@ public sealed class Assembler
             {
                 if (!allowUnresolved)
                 {
-                    throw new InvalidOperationException($"Line {lineNumber}: Invalid displacement '{dispText}'.");
+                    throw new InvalidOperationException(UndefinedOrInvalid(dispText, lineNumber, "Invalid displacement"));
                 }
             }
 
@@ -754,7 +773,7 @@ public sealed class Assembler
             {
                 if (!allowUnresolved)
                 {
-                    throw new InvalidOperationException($"Line {lineNumber}: Invalid symbol '{core}'.");
+                    throw new InvalidOperationException(UndefinedOrInvalid(core, lineNumber, "Invalid symbol"));
                 }
                 displacement = 0;
             }
@@ -815,6 +834,37 @@ public sealed class Assembler
 
         value = 0;
         return false;
+    }
+
+    private static string UndefinedOrInvalid(string token, int lineNumber, string fallback)
+    {
+        if (IsPotentialSymbol(token))
+        {
+            return $"Line {lineNumber}: Undefined symbol '{token}'.";
+        }
+        return $"Line {lineNumber}: {fallback} '{token}'.";
+    }
+
+    private static bool IsPotentialSymbol(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return false;
+        }
+
+        string trimmed = token.Trim();
+        if (TryParseLiteral(trimmed, out _))
+        {
+            return false;
+        }
+
+        if (trimmed.StartsWith("-", StringComparison.Ordinal) &&
+            TryParseLiteral(trimmed.Substring(1), out _))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private static IEnumerable<ushort> ExpandWideValue(ulong value, int wordSize)
@@ -1051,6 +1101,7 @@ public sealed class Assembler
                ImmediateOpcodes.ContainsKey(token) ||
                Immediate4Opcodes.ContainsKey(token) ||
                string.Equals(token, "LIMI", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(token, "RT", StringComparison.OrdinalIgnoreCase) ||
                Format2Opcodes.ContainsKey(token) ||
                RegDestOpcodes.ContainsKey(token) ||
                SingleOperandOpcodes.ContainsKey(token) ||

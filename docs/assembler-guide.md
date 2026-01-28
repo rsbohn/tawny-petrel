@@ -80,8 +80,10 @@ The symbol table (`.sym`) provides label-to-address mappings for debugging and c
 
 - TXT /your message here/ ; produces one word per character
 - ORG addr
-- RORG addr ; relocatable?
+- AORG addr ; absolute origin (alias of ORG)
+- RORG addr ; relocatable? (treated like ORG in Tawny)
 - DW, DD, DQ ; Data word, double, quad -- big endian
+- RT ; return (alias for `B *R11`)
 
 ## Tips
 

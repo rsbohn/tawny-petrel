@@ -398,6 +398,14 @@ class Program
         {
             return DisassembleFormat2(memory, pc, instruction, "MOVB", true);
         }
+        if (opcodeNibble == 0xA)
+        {
+            return DisassembleFormat2(memory, pc, instruction, "A", false);
+        }
+        if (opcodeNibble == 0xB)
+        {
+            return DisassembleFormat2(memory, pc, instruction, "AB", true);
+        }
         if (opcodeNibble == 0x1)
         {
             return DisassembleJump(pc, instruction);
@@ -461,9 +469,21 @@ class Program
         {
             return DisassembleSingleOperand(memory, pc, instruction, "BLWP");
         }
+        if ((instruction & 0xFFC0) == 0x0440)
+        {
+            if (instruction == 0x045B)
+            {
+                return new DisasmResult("RT", 1);
+            }
+            return DisassembleSingleOperand(memory, pc, instruction, "B");
+        }
         if ((instruction & 0xFFC0) == 0x04C0)
         {
             return DisassembleSingleOperand(memory, pc, instruction, "CLR");
+        }
+        if ((instruction & 0xFFC0) == 0x0680)
+        {
+            return DisassembleSingleOperand(memory, pc, instruction, "BL");
         }
         if ((instruction & 0xFFC0) == 0x0500)
         {

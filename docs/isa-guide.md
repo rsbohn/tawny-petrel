@@ -89,8 +89,10 @@ The **OP** and **X** bits are defined but not fully updated in the current imple
 ### Control
 
 - `BL` - Branch and Link (stores return PC in R11)
+- `B` - Branch to address
 - `BLWP` - Branch and Link with Workspace Pointer
 - `RTWP` - Return from Workspace Pointer
+- `RT` - Return (alias for `B *R11`)
 - `XOP` - Extended Operation
 
 ## Context Switching and XOP

@@ -25,6 +25,12 @@ public class Tms9900Isa
 
         switch (opcode)
         {
+            case 0xA:
+                ExecuteAFormat1(instruction, false);
+                break;
+            case 0xB:
+                ExecuteAFormat1(instruction, true);
+                break;
             case 0xC:
                 ExecuteMOV(instruction, false);
                 break;
@@ -203,10 +209,6 @@ public class Tms9900Isa
             case 0x09: // CB - Compare Byte
                 ExecuteC(instruction, (opcode & 1) == 1);
                 break;
-            case 0x0A: // A - Add
-            case 0x0B: // AB - Add Byte
-                ExecuteA(instruction, (opcode & 1) == 1);
-                break;
             case 0x0C: // MOV - Move
             case 0x0D: // MOVB - Move Byte
                 ExecuteMOV(instruction, (opcode & 1) == 1);
@@ -252,23 +254,27 @@ public class Tms9900Isa
         {
             _cpu.ReturnFromContext();
         }
-        else if ((instruction & 0xFFC0) == 0x03C0) // BLWP - Branch and Link with Workspace Pointer
+        else if ((instruction & 0xFFC0) == 0x0400) // BLWP - Branch and Link with Workspace Pointer
         {
             ExecuteBLWP(instruction);
         }
-        else if ((instruction & 0xFFC0) == 0x0400) // CLR - Clear
+        else if ((instruction & 0xFFC0) == 0x0440) // B - Branch
+        {
+            ExecuteB(instruction);
+        }
+        else if ((instruction & 0xFFC0) == 0x04C0) // CLR - Clear
         {
             ExecuteCLR(instruction);
         }
-        else if ((instruction & 0xFFC0) == 0x0440) // NEG - Negate
+        else if ((instruction & 0xFFC0) == 0x0500) // NEG - Negate
         {
             ExecuteNEG(instruction);
         }
-        else if ((instruction & 0xFFC0) == 0x0480) // INV - Invert
+        else if ((instruction & 0xFFC0) == 0x0540) // INV - Invert
         {
             ExecuteINV(instruction);
         }
-        else if ((instruction & 0xFFC0) == 0x04C0) // INC - Increment
+        else if ((instruction & 0xFFC0) == 0x0580) // INC - Increment
         {
             ExecuteINC(instruction);
         }
@@ -276,23 +282,27 @@ public class Tms9900Isa
         {
             ExecuteINCT(instruction);
         }
-        else if ((instruction & 0xFFC0) == 0x0540) // DEC - Decrement
+        else if ((instruction & 0xFFC0) == 0x0600) // DEC - Decrement
         {
             ExecuteDEC(instruction);
         }
-        else if ((instruction & 0xFFC0) == 0x0580) // DECT - Decrement by Two
+        else if ((instruction & 0xFFC0) == 0x0640) // DECT - Decrement by Two
         {
             ExecuteDECT(instruction);
         }
-        else if ((instruction & 0xFFC0) == 0x0600) // SWPB - Swap Bytes
+        else if ((instruction & 0xFFC0) == 0x0680) // BL - Branch and Link
+        {
+            ExecuteBL(instruction);
+        }
+        else if ((instruction & 0xFFC0) == 0x06C0) // SWPB - Swap Bytes
         {
             ExecuteSWPB(instruction);
         }
-        else if ((instruction & 0xFFC0) == 0x0640) // SETO - Set to Ones
+        else if ((instruction & 0xFFC0) == 0x0700) // SETO - Set to Ones
         {
             ExecuteSETO(instruction);
         }
-        else if ((instruction & 0xFFC0) == 0x0680) // ABS - Absolute Value
+        else if ((instruction & 0xFFC0) == 0x0740) // ABS - Absolute Value
         {
             ExecuteABS(instruction);
         }
@@ -468,9 +478,15 @@ public class Tms9900Isa
         ApplyAutoIncrementSingle(src);
     }
 
-    private void ExecuteA(ushort instruction, bool isByte)
+    private void ExecuteAFormat1(ushort instruction, bool isByte)
     {
-        (OperandReference src, OperandReference dest) = ResolveRegDestOperands(instruction, isByte);
+        int td = (instruction >> 10) & 0x3;
+        int d = (instruction >> 6) & 0xF;
+        int ts = (instruction >> 4) & 0x3;
+        int s = instruction & 0xF;
+
+        OperandReference src = ResolveOperand(ts, s, isByte);
+        OperandReference dest = ResolveOperand(td, d, isByte);
 
         if (isByte)
         {
@@ -493,7 +509,7 @@ public class Tms9900Isa
             _cpu.SetOverflow(((destVal ^ result) & (srcVal ^ result) & 0x8000) != 0);
         }
 
-        ApplyAutoIncrementSingle(src);
+        ApplyAutoIncrement(src, dest);
     }
 
     private void ExecuteMOV(ushort instruction, bool isByte)
@@ -832,12 +848,25 @@ public class Tms9900Isa
         ApplyAutoIncrementSingle(operand);
     }
 
+    private void ExecuteB(ushort instruction)
+    {
+        OperandReference operand = ResolveSingleOperand(instruction, false);
+        ushort address = operand.Kind == OperandKind.Register
+            ? _cpu.ReadRegister(operand.Register)
+            : operand.Address;
+        _cpu.SetProgramCounter(address);
+        ApplyAutoIncrementSingle(operand);
+    }
+
     private void ExecuteBL(ushort instruction)
     {
-        int reg = instruction & 0xF;
-        ushort address = _cpu.ReadRegister(reg);
+        OperandReference operand = ResolveSingleOperand(instruction, false);
+        ushort address = operand.Kind == OperandKind.Register
+            ? _cpu.ReadRegister(operand.Register)
+            : operand.Address;
         _cpu.WriteRegister(11, _cpu.ProgramCounter); // R11 = return address
         _cpu.SetProgramCounter(address);
+        ApplyAutoIncrementSingle(operand);
     }
 
     private void ExecuteSWPB(ushort instruction)

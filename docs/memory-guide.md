@@ -120,8 +120,8 @@ Tawny Petrel Memory Map (64K words, addresses in hexadecimal):
 0xF000-0xFFFE: Memory-mapped I/O (reserved for peripherals)
 MMIO devices:
 
-0xF000 (>F000): UART status register (THRE bit 0)
-0xF002 (>F002): UART data register
+0xF000 (>F000): UART status register (THRE bit 0, active low in Tawny, 300 baud simulated)
+0xF002 (>F002): UART data register (writes low 8 bits to console, sets busy for ~33.3ms)
 
 **Note**: General RAM starts at 0x00C0, but user code by convention starts at 0x0100 (providing a small buffer area for potential future use).
 
