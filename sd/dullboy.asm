@@ -1,4 +1,6 @@
 ****
+** dullboy.asm -- runs on TMS9900 computer
+****
 ** MMIO UART
 THRE    EQU >F000   ; UART transmit empty
 THRL    EQU >F002   ; UART transmit load
