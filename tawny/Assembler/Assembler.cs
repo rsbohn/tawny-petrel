@@ -51,7 +51,9 @@ public sealed class Assembler
         { "A", 0xA000 },
         { "AB", 0xB000 },
         { "MOV", 0xC000 },
-        { "MOVB", 0xD000 }
+        { "MOVB", 0xD000 },
+        { "SOC", 0xE000 },
+        { "SOCB", 0xF000 }
     };
 
     private static readonly Dictionary<string, int> RegDestOpcodes = new(StringComparer.OrdinalIgnoreCase)
@@ -62,8 +64,8 @@ public sealed class Assembler
         { "SB", 0x07 },
         { "C", 0x08 },
         { "CB", 0x09 },
-        { "SOC", 0x0E },
-        { "SOCB", 0x0F }
+        { "MPY", 0x0E },
+        { "DIV", 0x0F }
     };
 
     private static readonly Dictionary<string, ushort> SingleOperandOpcodes = new(StringComparer.OrdinalIgnoreCase)

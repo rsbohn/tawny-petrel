@@ -406,6 +406,14 @@ class Program
         {
             return DisassembleFormat2(memory, pc, instruction, "AB", true);
         }
+        if (opcodeNibble == 0xE)
+        {
+            return DisassembleFormat2(memory, pc, instruction, "SOC", false);
+        }
+        if (opcodeNibble == 0xF)
+        {
+            return DisassembleFormat2(memory, pc, instruction, "SOCB", true);
+        }
         if (opcodeNibble == 0x1)
         {
             return DisassembleJump(pc, instruction);
@@ -593,8 +601,8 @@ class Program
             case 0x09: mnemonic = "CB"; return true;
             case 0x0A: mnemonic = "A"; return true;
             case 0x0B: mnemonic = "AB"; return true;
-            case 0x0E: mnemonic = "SOC"; return true;
-            case 0x0F: mnemonic = "SOCB"; return true;
+            case 0x0E: mnemonic = "MPY"; return true;
+            case 0x0F: mnemonic = "DIV"; return true;
             default:
                 mnemonic = string.Empty;
                 return false;

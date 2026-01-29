@@ -238,6 +238,100 @@ public class Tms9900IsaTests
     }
 
     [Fact]
+    public void MPY_RegisterMultiply_ShouldStoreProductInDestPair()
+    {
+        var memory = new Tms9900Memory();
+        memory.WriteWord(0x0000, 0x2000); // WP
+        memory.WriteWord(0x0002, 0x0100); // PC
+
+        var cpu = new Tms9900Cpu(memory);
+        cpu.Reset();
+        cpu.Start();
+
+        cpu.WriteRegister(3, 0x0010);
+        cpu.WriteRegister(4, 0x0000);
+        cpu.WriteRegister(5, 0x0003);
+
+        // MPY R5, R3
+        memory.WriteWord(0x0100, 0x38C5);
+        cpu.Step();
+
+        Assert.Equal((ushort)0x0000, cpu.ReadRegister(3));
+        Assert.Equal((ushort)0x0030, cpu.ReadRegister(4));
+    }
+
+    [Fact]
+    public void MPY_DestIsR15_ShouldWriteLowWordAfterWorkspace()
+    {
+        var memory = new Tms9900Memory();
+        memory.WriteWord(0x0000, 0x2000); // WP
+        memory.WriteWord(0x0002, 0x0100); // PC
+
+        var cpu = new Tms9900Cpu(memory);
+        cpu.Reset();
+        cpu.Start();
+
+        cpu.WriteRegister(15, 0x0002);
+        cpu.WriteRegister(1, 0x0003);
+        memory.WriteWord(0x2020, 0xFFFF);
+
+        // MPY R1, R15
+        memory.WriteWord(0x0100, 0x3BC1);
+        cpu.Step();
+
+        Assert.Equal((ushort)0x0000, cpu.ReadRegister(15));
+        Assert.Equal((ushort)0x0006, memory.ReadWord(0x2020));
+    }
+
+    [Fact]
+    public void DIV_ValidDivision_ShouldStoreQuotientAndRemainder()
+    {
+        var memory = new Tms9900Memory();
+        memory.WriteWord(0x0000, 0x2000); // WP
+        memory.WriteWord(0x0002, 0x0100); // PC
+
+        var cpu = new Tms9900Cpu(memory);
+        cpu.Reset();
+        cpu.Start();
+
+        cpu.WriteRegister(3, 0x0002);
+        cpu.WriteRegister(4, 0x0000);
+        cpu.WriteRegister(5, 0x0003);
+
+        // DIV R5, R3
+        memory.WriteWord(0x0100, 0x3CC5);
+        cpu.Step();
+
+        Assert.Equal((ushort)0xAAAA, cpu.ReadRegister(3));
+        Assert.Equal((ushort)0x0002, cpu.ReadRegister(4));
+        Assert.False(cpu.GetStatusBit4());
+    }
+
+    [Fact]
+    public void DIV_DivisorLessOrEqualHighWord_ShouldSetStatusBit4AndNoOp()
+    {
+        var memory = new Tms9900Memory();
+        memory.WriteWord(0x0000, 0x2000); // WP
+        memory.WriteWord(0x0002, 0x0100); // PC
+
+        var cpu = new Tms9900Cpu(memory);
+        cpu.Reset();
+        cpu.Start();
+
+        cpu.WriteRegister(3, 0x0003);
+        cpu.WriteRegister(4, 0x1111);
+        cpu.WriteRegister(5, 0x0003);
+
+        // DIV R5, R3
+        memory.WriteWord(0x0100, 0x3CC5);
+        cpu.Step();
+
+        Assert.Equal((ushort)0x0003, cpu.ReadRegister(3));
+        Assert.Equal((ushort)0x1111, cpu.ReadRegister(4));
+        Assert.True(cpu.GetStatusBit4());
+    }
+
+    [Fact]
     public void JMP_UnconditionalJump_ShouldJumpCorrectly()
     {
         var memory = new Tms9900Memory();

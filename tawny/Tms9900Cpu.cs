@@ -26,6 +26,7 @@ public class Tms9900Cpu
     private const int OV_BIT = 0x0800;  // Overflow
     private const int OP_BIT = 0x0400;  // Odd Parity
     private const int X_BIT = 0x0200;   // Extended operation
+    private const int ST4_BIT = 0x0010; // Status bit 4 (division overflow)
 
     public bool IsRunning { get; private set; }
     public bool IsIdle => _isIdle;
@@ -262,6 +263,19 @@ public class Tms9900Cpu
     public bool GetOverflow()
     {
         return (_statusRegister & OV_BIT) != 0;
+    }
+
+    public void SetStatusBit4(bool value)
+    {
+        if (value)
+            _statusRegister |= ST4_BIT;
+        else
+            _statusRegister &= unchecked((ushort)~ST4_BIT);
+    }
+
+    public bool GetStatusBit4()
+    {
+        return (_statusRegister & ST4_BIT) != 0;
     }
 
     /// <summary>

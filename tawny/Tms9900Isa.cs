@@ -20,6 +20,17 @@ public class Tms9900Isa
     /// </summary>
     public void Execute(ushort instruction)
     {
+        if ((instruction & 0xFC00) == 0x3C00)
+        {
+            ExecuteDIV(instruction);
+            return;
+        }
+        if ((instruction & 0xFC00) == 0x3800)
+        {
+            ExecuteMPY(instruction);
+            return;
+        }
+
         // Decode and execute based on opcode
         byte opcode = (byte)(instruction >> 12);
 
@@ -36,6 +47,12 @@ public class Tms9900Isa
                 break;
             case 0xD:
                 ExecuteMOV(instruction, true);
+                break;
+            case 0xE:
+                ExecuteSOCFormat2(instruction, false);
+                break;
+            case 0xF:
+                ExecuteSOCFormat2(instruction, true);
                 break;
             case 0x0:
                 ExecuteFormat1(instruction);
@@ -212,10 +229,6 @@ public class Tms9900Isa
             case 0x0C: // MOV - Move
             case 0x0D: // MOVB - Move Byte
                 ExecuteMOV(instruction, (opcode & 1) == 1);
-                break;
-            case 0x0E: // SOC - Set Ones Corresponding
-            case 0x0F: // SOCB - Set Ones Corresponding Byte
-                ExecuteSOC(instruction, (opcode & 1) == 1);
                 break;
             case 0x10: // SLA - Shift Left Arithmetic
                 ExecuteSLA(instruction);
@@ -402,6 +415,63 @@ public class Tms9900Isa
             _cpu.UpdateStatusFlags(0);
         else
             _cpu.UpdateStatusFlags(1);
+    }
+
+    private void ExecuteDIV(ushort instruction)
+    {
+        int destReg = (instruction >> 6) & 0xF;
+        int srcMode = (instruction >> 4) & 0x3;
+        int srcReg = instruction & 0xF;
+
+        OperandReference src = ResolveOperand(srcMode, srcReg, false);
+        ushort divisor = ReadWord(src);
+        ushort high = _cpu.ReadRegister(destReg);
+        ushort low = destReg == 15
+            ? _memory.ReadWord((ushort)(_cpu.WorkspacePointer + 32))
+            : _cpu.ReadRegister(destReg + 1);
+
+        if (divisor <= high)
+        {
+            _cpu.SetStatusBit4(true);
+            ApplyAutoIncrementSingle(src);
+            return;
+        }
+
+        _cpu.SetStatusBit4(false);
+        uint dividend = ((uint)high << 16) | low;
+        ushort quotient = (ushort)(dividend / divisor);
+        ushort remainder = (ushort)(dividend % divisor);
+
+        _cpu.WriteRegister(destReg, quotient);
+        if (destReg == 15)
+            _memory.WriteWord((ushort)(_cpu.WorkspacePointer + 32), remainder);
+        else
+            _cpu.WriteRegister(destReg + 1, remainder);
+
+        ApplyAutoIncrementSingle(src);
+    }
+
+    private void ExecuteMPY(ushort instruction)
+    {
+        int destReg = (instruction >> 6) & 0xF;
+        int srcMode = (instruction >> 4) & 0x3;
+        int srcReg = instruction & 0xF;
+
+        OperandReference src = ResolveOperand(srcMode, srcReg, false);
+        ushort multiplier = ReadWord(src);
+        ushort multiplicand = _cpu.ReadRegister(destReg);
+
+        uint product = (uint)multiplicand * multiplier;
+        ushort high = (ushort)(product >> 16);
+        ushort low = (ushort)product;
+
+        _cpu.WriteRegister(destReg, high);
+        if (destReg == 15)
+            _memory.WriteWord((ushort)(_cpu.WorkspacePointer + 32), low);
+        else
+            _cpu.WriteRegister(destReg + 1, low);
+
+        ApplyAutoIncrementSingle(src);
     }
 
     private void ExecuteSZC(ushort instruction, bool isByte)
@@ -680,6 +750,36 @@ public class Tms9900Isa
         }
 
         ApplyAutoIncrementSingle(src);
+    }
+
+    private void ExecuteSOCFormat2(ushort instruction, bool isByte)
+    {
+        int td = (instruction >> 10) & 0x3;
+        int d = (instruction >> 6) & 0xF;
+        int ts = (instruction >> 4) & 0x3;
+        int s = instruction & 0xF;
+
+        OperandReference src = ResolveOperand(ts, s, isByte);
+        OperandReference dest = ResolveOperand(td, d, isByte);
+
+        if (isByte)
+        {
+            byte srcVal = ReadByte(src);
+            byte destVal = ReadByte(dest);
+            byte result = (byte)(destVal | srcVal);
+            WriteByte(dest, result);
+            _cpu.UpdateStatusFlagsByte(result);
+        }
+        else
+        {
+            ushort srcVal = ReadWord(src);
+            ushort destVal = ReadWord(dest);
+            ushort result = (ushort)(destVal | srcVal);
+            WriteWord(dest, result);
+            _cpu.UpdateStatusFlags(result);
+        }
+
+        ApplyAutoIncrement(src, dest);
     }
 
     private void ExecuteSLA(ushort instruction)

@@ -48,6 +48,8 @@ The **OP** and **X** bits are defined but not fully updated in the current imple
 
 - `A` / `AB`
 - `S` / `SB`
+- `DIV` - Unsigned divide (see below)
+- `MPY` - Unsigned multiply (see below)
 - `INC`
 - `INCT`
 - `DEC`
@@ -113,6 +115,24 @@ Each XOP vector is 4 bytes:
 ## Byte Operations (Current Behavior)
 
 Byte forms (`MOVB`, `AB`, `SB`, `SZCB`, `SOCB`, `CB`) are decoded, but the current implementation treats them like word operations. If you rely on byte semantics, expect incorrect results until byte masking is implemented.
+
+## DIV (Unsigned Divide)
+
+Encoding: `[001111][DDDD][TT][SSSS]`
+
+- `DIV S, D` divides the unsigned 32-bit value `(WRD:WRD+1)` by unsigned `S`.
+- If unsigned `S` is less than or equal to unsigned `WRD`, no operation occurs and `ST4` is set.
+- On success, `WRD` receives the quotient and `WRD+1` receives the remainder.
+- If `D == 15`, the remainder is written to the word in memory immediately after `WR15`.
+
+## MPY (Unsigned Multiply)
+
+Encoding: `[001110][DDDD][TT][SSSS]`
+
+- `MPY S, D` multiplies unsigned `S` by unsigned `WRD`.
+- The 32-bit product is stored in `WRD` (high word) and `WRD+1` (low word).
+- If `D == 15`, the low word is written to the word in memory immediately after `WR15`.
+- No status flags are modified.
 
 ## Example: Minimal Program
 
