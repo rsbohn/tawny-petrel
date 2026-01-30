@@ -52,18 +52,20 @@ public sealed class Assembler
         { "AB", 0xB000 },
         { "MOV", 0xC000 },
         { "MOVB", 0xD000 },
+        { "S", 0x6000 },
+        { "SB", 0x7000 },
+        { "C", 0x8000 },
+        { "CB", 0x9000 },
+        { "SZC", 0x4000 },
+        { "SZCB", 0x5000 },
         { "SOC", 0xE000 },
         { "SOCB", 0xF000 }
     };
 
     private static readonly Dictionary<string, int> RegDestOpcodes = new(StringComparer.OrdinalIgnoreCase)
     {
-        { "SZC", 0x04 },
-        { "SZCB", 0x05 },
-        { "S", 0x06 },
-        { "SB", 0x07 },
-        { "C", 0x08 },
-        { "CB", 0x09 },
+        { "COC", 0x08 },
+        { "CZC", 0x09 },
         { "MPY", 0x0E },
         { "DIV", 0x0F }
     };
@@ -85,14 +87,33 @@ public sealed class Assembler
         { "ABS", 0x0740 }
     };
 
+    private static readonly Dictionary<string, ushort> XopOpcodes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "XOP", 0x2C00 }
+    };
+
     private static readonly Dictionary<string, ushort> ImpliedOpcodes = new(StringComparer.OrdinalIgnoreCase)
     {
         { "IDLE", 0x0340 },
         { "RTWP", 0x0380 }
     };
 
+    private static readonly Dictionary<string, ushort> ShiftOpcodes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "SRA", 0x08 },
+        { "SRL", 0x09 },
+        { "SLA", 0x0A },
+        { "SRC", 0x0B }
+    };
+
     private static readonly Dictionary<string, ushort> Immediate4Opcodes = new(StringComparer.OrdinalIgnoreCase)
     {
+    };
+
+    private static readonly Dictionary<string, ushort> Reg4Opcodes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "STWP", 0x02A0 },
+        { "STST", 0x02C0 }
     };
 
     public AssemblerResult Assemble(string sourcePath, string? outputDir)
@@ -249,7 +270,19 @@ public sealed class Assembler
                 continue;
             }
 
+            if (Reg4Opcodes.ContainsKey(line.Mnemonic))
+            {
+                locationCounter = (ushort)(locationCounter + 2);
+                continue;
+            }
+
             if (ImpliedOpcodes.ContainsKey(line.Mnemonic))
+            {
+                locationCounter = (ushort)(locationCounter + 2);
+                continue;
+            }
+
+            if (ShiftOpcodes.ContainsKey(line.Mnemonic))
             {
                 locationCounter = (ushort)(locationCounter + 2);
                 continue;
@@ -306,6 +339,29 @@ public sealed class Assembler
                 else
                 {
                     errors.Add($"Line {line.LineNumber}: Expected single operand for {line.Mnemonic}.");
+                }
+                continue;
+            }
+
+            if (XopOpcodes.ContainsKey(line.Mnemonic))
+            {
+                var operands = SplitOperands(line.OperandText);
+                if (operands.Count != 2)
+                {
+                    errors.Add($"Line {line.LineNumber}: Expected src, xop for XOP.");
+                }
+                else
+                {
+                    Operand src = ParseOperand(operands[0], line.LineNumber, symbols, true);
+                    if (!TryEvaluate(operands[1], symbols, out ushort xop) || xop > 0xF)
+                    {
+                        errors.Add(UndefinedOrInvalid(operands[1], line.LineNumber, "Invalid XOP number"));
+                    }
+                    else
+                    {
+                        int words = 1 + (src.HasExtraWord ? 1 : 0);
+                        locationCounter = (ushort)(locationCounter + (words * 2));
+                    }
                 }
                 continue;
             }
@@ -491,6 +547,22 @@ public sealed class Assembler
                 continue;
             }
 
+            if (Reg4Opcodes.TryGetValue(line.Mnemonic, out ushort reg4Opcode))
+            {
+                var operands = SplitOperands(line.OperandText);
+                if (operands.Count != 1)
+                {
+                    throw new InvalidOperationException($"Line {line.LineNumber}: Expected register for {line.Mnemonic}.");
+                }
+
+                int reg = ParseRegister(operands[0], line.LineNumber);
+                ushort instruction = (ushort)(reg4Opcode | reg);
+                EmitWord(outputBytes, locationCounter, instruction);
+                listingLines.Add(FormatListingLine(locationCounter, new[] { instruction }, line.Original));
+                locationCounter += 2;
+                continue;
+            }
+
             if (ImpliedOpcodes.TryGetValue(line.Mnemonic, out ushort impliedOpcode))
             {
                 if (!string.IsNullOrWhiteSpace(line.OperandText))
@@ -591,6 +663,34 @@ public sealed class Assembler
                 continue;
             }
 
+            if (XopOpcodes.TryGetValue(line.Mnemonic, out ushort xopOpcode))
+            {
+                var operands = SplitOperands(line.OperandText);
+                if (operands.Count != 2)
+                {
+                    throw new InvalidOperationException($"Line {line.LineNumber}: Expected src, xop for XOP.");
+                }
+
+                Operand src = ParseOperand(operands[0], line.LineNumber, symbols, false);
+                if (!TryEvaluate(operands[1], symbols, out ushort xop) || xop > 0xF)
+                {
+                    throw new InvalidOperationException(UndefinedOrInvalid(operands[1], line.LineNumber, "Invalid XOP number"));
+                }
+
+                ushort instruction = (ushort)(xopOpcode | (xop << 6) | ((ushort)src.Mode << 4) | src.Register);
+                EmitWord(outputBytes, locationCounter, instruction);
+                var words = new List<ushort> { instruction };
+                locationCounter += 2;
+                if (src.HasExtraWord)
+                {
+                    EmitWord(outputBytes, locationCounter, src.ExtraWord);
+                    words.Add(src.ExtraWord);
+                    locationCounter += 2;
+                }
+                listingLines.Add(FormatListingLine((ushort)(locationCounter - (words.Count * 2)), words.ToArray(), line.Original));
+                continue;
+            }
+
             if (string.Equals(line.Mnemonic, "RT", StringComparison.OrdinalIgnoreCase))
             {
                 const ushort rtInstruction = 0x045B; // B *R11
@@ -627,6 +727,27 @@ public sealed class Assembler
 
                 byte dispByte = unchecked((byte)(sbyte)displacement);
                 ushort instruction = (ushort)((jumpOpcode << 8) | dispByte);
+                EmitWord(outputBytes, locationCounter, instruction);
+                listingLines.Add(FormatListingLine(locationCounter, new[] { instruction }, line.Original));
+                locationCounter += 2;
+                continue;
+            }
+
+            if (ShiftOpcodes.TryGetValue(line.Mnemonic, out ushort shiftOpcode))
+            {
+                var operands = SplitOperands(line.OperandText);
+                if (operands.Count != 2)
+                {
+                    throw new InvalidOperationException($"Line {line.LineNumber}: Expected reg, count for {line.Mnemonic}.");
+                }
+
+                int reg = ParseRegister(operands[0], line.LineNumber);
+                if (!TryEvaluate(operands[1], symbols, out ushort count))
+                {
+                    throw new InvalidOperationException(UndefinedOrInvalid(operands[1], line.LineNumber, "Invalid shift count"));
+                }
+
+                ushort instruction = (ushort)((shiftOpcode << 8) | ((count & 0xF) << 4) | (reg & 0xF));
                 EmitWord(outputBytes, locationCounter, instruction);
                 listingLines.Add(FormatListingLine(locationCounter, new[] { instruction }, line.Original));
                 locationCounter += 2;
@@ -709,12 +830,44 @@ public sealed class Assembler
             trimmed = trimmed.Substring(1);
         }
 
-        if (!TryParseLiteral(trimmed, out ushort value) || value > 15)
+        if (!TryParseRegisterIndex(trimmed, out ushort value) || value > 15)
         {
             throw new InvalidOperationException($"Line {lineNumber}: Invalid register '{token}'.");
         }
 
         return value;
+    }
+
+    private static bool TryParseRegisterIndex(string token, out ushort value)
+    {
+        value = 0;
+        if (string.IsNullOrWhiteSpace(token)) return false;
+
+        string digits = token.Trim();
+        char prefix = digits[0];
+        if (prefix == '#' || prefix == '$' || prefix == '>')
+        {
+            digits = digits.Substring(1);
+        }
+        else
+        {
+            prefix = '\0';
+        }
+
+        if (string.IsNullOrWhiteSpace(digits)) return false;
+
+        if (prefix == '#' )
+        {
+            return ushort.TryParse(digits, out value);
+        }
+
+        if (prefix == '$' || prefix == '>')
+        {
+            return ushort.TryParse(digits, System.Globalization.NumberStyles.HexNumber, null, out value);
+        }
+
+        // Default for registers: decimal (R00..R15)
+        return ushort.TryParse(digits, out value);
     }
 
     private static Operand ParseOperand(string token, int lineNumber, Dictionary<string, ushort> symbols, bool allowUnresolved)
@@ -1102,11 +1255,14 @@ public sealed class Assembler
         return Directives.Contains(token) ||
                ImmediateOpcodes.ContainsKey(token) ||
                Immediate4Opcodes.ContainsKey(token) ||
+               Reg4Opcodes.ContainsKey(token) ||
                string.Equals(token, "LIMI", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(token, "RT", StringComparison.OrdinalIgnoreCase) ||
+               XopOpcodes.ContainsKey(token) ||
                Format2Opcodes.ContainsKey(token) ||
                RegDestOpcodes.ContainsKey(token) ||
                SingleOperandOpcodes.ContainsKey(token) ||
+               ShiftOpcodes.ContainsKey(token) ||
                JumpOpcodes.ContainsKey(token) ||
                ImpliedOpcodes.ContainsKey(token);
     }

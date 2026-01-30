@@ -10,8 +10,10 @@ The decoder uses the classic TMS9900 format groups, but with reduced addressing 
 
 - **Format I (immediates and special ops)**: LI, AI, ANDI, ORI, CI, STWP, STST, RTWP, BLWP, CLR, etc.
 - **Jumps**: 8-bit signed displacement, multiplied by 2
-- **Single-operand**: arithmetic/logical/shift operations (register-only in practice)
-- **Dual-operand**: COC and CZC (register-only)
+- **Single-operand**: arithmetic/logical operations (register-only in practice)
+- **Format II**: register/memory to register/memory (A/AB, MOV/MOVB, S/SB, C/CB, SZC/SZCB, SOC/SOCB)
+- **Register-destination**: reg/memory to register (COC, CZC, MPY, DIV)
+- **Shifts**: SLA/SRA/SRC/SRL (count in bits 7–4, register in bits 3–0)
 
 Addressing mode bits are parsed but not fully implemented yet. Most operations assume register operands only.
 

@@ -36,6 +36,18 @@ public class Tms9900Isa
 
         switch (opcode)
         {
+            case 0x6:
+                ExecuteSFormat2(instruction, false);
+                break;
+            case 0x7:
+                ExecuteSFormat2(instruction, true);
+                break;
+            case 0x8:
+                ExecuteCFormat2(instruction, false);
+                break;
+            case 0x9:
+                ExecuteCFormat2(instruction, true);
+                break;
             case 0xA:
                 ExecuteAFormat1(instruction, false);
                 break;
@@ -105,14 +117,34 @@ public class Tms9900Isa
             ExecuteLIMI(instruction);
             return;
         }
-        if ((instruction & 0xFFF0) == 0x0C00)
+        if ((instruction & 0xFFF0) == 0x02A0)
         {
             ExecuteSTWP(instruction);
             return;
         }
-        if ((instruction & 0xFFF0) == 0x0E00)
+        if ((instruction & 0xFFF0) == 0x02C0)
         {
             ExecuteSTST(instruction);
+            return;
+        }
+        if ((instruction & 0xFF00) == 0x0800)
+        {
+            ExecuteSRA(instruction);
+            return;
+        }
+        if ((instruction & 0xFF00) == 0x0900)
+        {
+            ExecuteSRL(instruction);
+            return;
+        }
+        if ((instruction & 0xFF00) == 0x0A00)
+        {
+            ExecuteSLA(instruction);
+            return;
+        }
+        if ((instruction & 0xFF00) == 0x0B00)
+        {
+            ExecuteSRC(instruction);
             return;
         }
 
@@ -194,10 +226,10 @@ public class Tms9900Isa
 
         switch (opcode)
         {
-            case 0x2: // COC - Compare Ones Corresponding
+            case 0x2: // COC - Compare Ones Corresponding (legacy decode)
                 ExecuteCOC(src, dest);
                 break;
-            case 0x3: // CZC - Compare Zeros Corresponding
+            case 0x3: // CZC - Compare Zeros Corresponding (legacy decode)
                 ExecuteCZC(src, dest);
                 break;
         }
@@ -218,29 +250,15 @@ public class Tms9900Isa
             case 0x05: // SZCB - Set Zeros Corresponding Byte
                 ExecuteSZC(instruction, (opcode & 1) == 1);
                 break;
-            case 0x06: // S - Subtract
-            case 0x07: // SB - Subtract Byte
-                ExecuteS(instruction, (opcode & 1) == 1);
+            case 0x08: // COC - Compare Ones Corresponding
+                ExecuteCOCRegDest(instruction);
                 break;
-            case 0x08: // C - Compare
-            case 0x09: // CB - Compare Byte
-                ExecuteC(instruction, (opcode & 1) == 1);
+            case 0x09: // CZC - Compare Zeros Corresponding
+                ExecuteCZCRegDest(instruction);
                 break;
             case 0x0C: // MOV - Move
             case 0x0D: // MOVB - Move Byte
                 ExecuteMOV(instruction, (opcode & 1) == 1);
-                break;
-            case 0x10: // SLA - Shift Left Arithmetic
-                ExecuteSLA(instruction);
-                break;
-            case 0x11: // SRA - Shift Right Arithmetic
-                ExecuteSRA(instruction);
-                break;
-            case 0x12: // SRC - Shift Right Circular
-                ExecuteSRC(instruction);
-                break;
-            case 0x13: // SRL - Shift Right Logical
-                ExecuteSRL(instruction);
                 break;
             default:
                 DecodeExtendedOps(instruction);
@@ -417,6 +435,32 @@ public class Tms9900Isa
             _cpu.UpdateStatusFlags(1);
     }
 
+    private void ExecuteCOCRegDest(ushort instruction)
+    {
+        (OperandReference src, OperandReference dest) = ResolveRegDestOperands(instruction, false);
+        ushort srcVal = ReadWord(src);
+        ushort destVal = _cpu.ReadRegister(dest.Register);
+        bool equal = (srcVal & destVal) == srcVal;
+        if (equal)
+            _cpu.UpdateStatusFlags(0);
+        else
+            _cpu.UpdateStatusFlags(1);
+        ApplyAutoIncrementSingle(src);
+    }
+
+    private void ExecuteCZCRegDest(ushort instruction)
+    {
+        (OperandReference src, OperandReference dest) = ResolveRegDestOperands(instruction, false);
+        ushort srcVal = ReadWord(src);
+        ushort destVal = _cpu.ReadRegister(dest.Register);
+        bool equal = ((~srcVal) & destVal) == (~srcVal);
+        if (equal)
+            _cpu.UpdateStatusFlags(0);
+        else
+            _cpu.UpdateStatusFlags(1);
+        ApplyAutoIncrementSingle(src);
+    }
+
     private void ExecuteDIV(ushort instruction)
     {
         int destReg = (instruction >> 6) & 0xF;
@@ -526,6 +570,40 @@ public class Tms9900Isa
         ApplyAutoIncrementSingle(src);
     }
 
+    private void ExecuteSFormat2(ushort instruction, bool isByte)
+    {
+        int td = (instruction >> 10) & 0x3;
+        int d = (instruction >> 6) & 0xF;
+        int ts = (instruction >> 4) & 0x3;
+        int s = instruction & 0xF;
+
+        OperandReference src = ResolveOperand(ts, s, isByte);
+        OperandReference dest = ResolveOperand(td, d, isByte);
+
+        if (isByte)
+        {
+            byte srcVal = ReadByte(src);
+            byte destVal = ReadByte(dest);
+            int result = destVal - srcVal;
+            WriteByte(dest, (byte)result);
+            _cpu.UpdateStatusFlagsByte((byte)result);
+            _cpu.SetCarry(result >= 0);
+            _cpu.SetOverflow(((destVal ^ srcVal) & (destVal ^ result) & 0x80) != 0);
+        }
+        else
+        {
+            ushort srcVal = ReadWord(src);
+            ushort destVal = ReadWord(dest);
+            int result = destVal - srcVal;
+            WriteWord(dest, (ushort)result);
+            _cpu.UpdateStatusFlags(result);
+            _cpu.SetCarry(result >= 0);
+            _cpu.SetOverflow(((destVal ^ srcVal) & (destVal ^ result) & 0x8000) != 0);
+        }
+
+        ApplyAutoIncrement(src, dest);
+    }
+
     private void ExecuteC(ushort instruction, bool isByte)
     {
         (OperandReference src, OperandReference dest) = ResolveRegDestOperands(instruction, isByte);
@@ -546,6 +624,34 @@ public class Tms9900Isa
         }
 
         ApplyAutoIncrementSingle(src);
+    }
+
+    private void ExecuteCFormat2(ushort instruction, bool isByte)
+    {
+        int td = (instruction >> 10) & 0x3;
+        int d = (instruction >> 6) & 0xF;
+        int ts = (instruction >> 4) & 0x3;
+        int s = instruction & 0xF;
+
+        OperandReference src = ResolveOperand(ts, s, isByte);
+        OperandReference dest = ResolveOperand(td, d, isByte);
+
+        if (isByte)
+        {
+            byte srcVal = ReadByte(src);
+            byte destVal = ReadByte(dest);
+            int result = destVal - srcVal;
+            _cpu.UpdateStatusFlagsByte((byte)result);
+        }
+        else
+        {
+            ushort srcVal = ReadWord(src);
+            ushort destVal = ReadWord(dest);
+            int result = destVal - srcVal;
+            _cpu.UpdateStatusFlags(result);
+        }
+
+        ApplyAutoIncrement(src, dest);
     }
 
     private void ExecuteAFormat1(ushort instruction, bool isByte)
@@ -784,8 +890,8 @@ public class Tms9900Isa
 
     private void ExecuteSLA(ushort instruction)
     {
-        int reg = (instruction >> 6) & 0xF;
-        int count = instruction & 0xF;
+        int reg = instruction & 0xF;
+        int count = (instruction >> 4) & 0xF;
         if (count == 0) count = _cpu.ReadRegister(0) & 0xF;
         if (count == 0) count = 16;
 
@@ -801,8 +907,8 @@ public class Tms9900Isa
 
     private void ExecuteSRA(ushort instruction)
     {
-        int reg = (instruction >> 6) & 0xF;
-        int count = instruction & 0xF;
+        int reg = instruction & 0xF;
+        int count = (instruction >> 4) & 0xF;
         if (count == 0) count = _cpu.ReadRegister(0) & 0xF;
         if (count == 0) count = 16;
 
@@ -820,8 +926,8 @@ public class Tms9900Isa
 
     private void ExecuteSRC(ushort instruction)
     {
-        int reg = (instruction >> 6) & 0xF;
-        int count = instruction & 0xF;
+        int reg = instruction & 0xF;
+        int count = (instruction >> 4) & 0xF;
         if (count == 0) count = _cpu.ReadRegister(0) & 0xF;
         if (count == 0) count = 16;
 
@@ -839,8 +945,8 @@ public class Tms9900Isa
 
     private void ExecuteSRL(ushort instruction)
     {
-        int reg = (instruction >> 6) & 0xF;
-        int count = instruction & 0xF;
+        int reg = instruction & 0xF;
+        int count = (instruction >> 4) & 0xF;
         if (count == 0) count = _cpu.ReadRegister(0) & 0xF;
         if (count == 0) count = 16;
 

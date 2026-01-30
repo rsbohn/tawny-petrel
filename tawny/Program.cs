@@ -48,11 +48,13 @@ class Program
         Console.WriteLine("  dis <addr> [count] - Disassemble from address (hex)");
         Console.WriteLine("  trace [n]  - Trace execution for n steps (hex)");
         Console.WriteLine("  c [n]      - Continue execution (optional step count, hex)");
+        Console.WriteLine("  break <addr>|list|none - Toggle/list/clear breakpoints (hex)");
         Console.WriteLine("  help       - Show this help");
         Console.WriteLine("  q          - Quit");
         Console.WriteLine("  numeric literals: hex default, % for octal, # for decimal");
         Console.WriteLine();
 
+        var breakpoints = new HashSet<ushort>();
         bool running = true;
         while (running)
         {
@@ -218,6 +220,12 @@ class Program
                             for (int i = 0; i < count; i++)
                             {
                                 if (!cpu.IsRunning) break;
+                                if (breakpoints.Contains(cpu.ProgramCounter))
+                                {
+                                    cpu.Stop();
+                                    Console.WriteLine($"Breakpoint hit at {FormatHex(cpu.ProgramCounter)}.");
+                                    break;
+                                }
                                 cpu.Step();
                             }
                             Console.WriteLine(FormatState(cpu));
@@ -225,7 +233,16 @@ class Program
                         else
                         {
                             cpu.Start();
-                            cpu.Run();
+                            while (cpu.IsRunning)
+                            {
+                                if (breakpoints.Contains(cpu.ProgramCounter))
+                                {
+                                    cpu.Stop();
+                                    Console.WriteLine($"Breakpoint hit at {FormatHex(cpu.ProgramCounter)}.");
+                                    break;
+                                }
+                                cpu.Step();
+                            }
                             Console.WriteLine(FormatState(cpu));
                         }
                     }
@@ -285,11 +302,57 @@ class Program
                     for (int i = 0; i < traceCount; i++)
                     {
                         if (!cpu.IsRunning) break;
+                        if (breakpoints.Contains(cpu.ProgramCounter))
+                        {
+                            cpu.Stop();
+                            Console.WriteLine($"Breakpoint hit at {FormatHex(cpu.ProgramCounter)}.");
+                            break;
+                        }
                         ushort pc = cpu.ProgramCounter;
                         ushort instruction = memory.ReadWord(pc);
                         var dis = DisassembleInstruction(memory, pc, instruction);
                         cpu.Step();
                         Console.WriteLine($"{FormatHex(pc)}: {FormatHex(instruction)} {dis.Text} -> {FormatState(cpu)}");
+                    }
+                    break;
+
+                case "break":
+                    if (parts.Length < 2 || string.Equals(parts[1], "list", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (breakpoints.Count == 0)
+                        {
+                            Console.WriteLine("No breakpoints set.");
+                        }
+                        else
+                        {
+                            foreach (ushort bp in breakpoints.OrderBy(x => x))
+                            {
+                                Console.WriteLine($"Breakpoint {FormatHex(bp)}");
+                            }
+                        }
+                        break;
+                    }
+                    if (string.Equals(parts[1], "none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        breakpoints.Clear();
+                        Console.WriteLine("Breakpoints cleared.");
+                        break;
+                    }
+                    if (!TryParseLiteral(parts[1], out ushort bpAddr))
+                    {
+                        Console.WriteLine($"Invalid breakpoint address: {parts[1]}");
+                        break;
+                    }
+                    bpAddr = (ushort)(bpAddr & 0xFFFE);
+                    if (breakpoints.Contains(bpAddr))
+                    {
+                        breakpoints.Remove(bpAddr);
+                        Console.WriteLine($"Breakpoint cleared at {FormatHex(bpAddr)}.");
+                    }
+                    else
+                    {
+                        breakpoints.Add(bpAddr);
+                        Console.WriteLine($"Breakpoint set at {FormatHex(bpAddr)}.");
                     }
                     break;
 
@@ -342,6 +405,7 @@ class Program
         Console.WriteLine("  dis <addr> [count] - Disassemble from address (hex)");
         Console.WriteLine("  trace [n]  - Trace execution for n steps (hex)");
         Console.WriteLine("  c [n]      - Continue execution (optional step count, hex)");
+        Console.WriteLine("  break <addr>|list|none - Toggle/list/clear breakpoints (hex)");
         Console.WriteLine("  help       - Show this help");
         Console.WriteLine("  q          - Quit");
         Console.WriteLine("  numeric literals: hex default, % for octal, # for decimal");
@@ -406,6 +470,22 @@ class Program
         {
             return DisassembleFormat2(memory, pc, instruction, "AB", true);
         }
+        if (opcodeNibble == 0x6)
+        {
+            return DisassembleFormat2(memory, pc, instruction, "S", false);
+        }
+        if (opcodeNibble == 0x7)
+        {
+            return DisassembleFormat2(memory, pc, instruction, "SB", true);
+        }
+        if (opcodeNibble == 0x8)
+        {
+            return DisassembleFormat2(memory, pc, instruction, "C", false);
+        }
+        if (opcodeNibble == 0x9)
+        {
+            return DisassembleFormat2(memory, pc, instruction, "CB", true);
+        }
         if (opcodeNibble == 0xE)
         {
             return DisassembleFormat2(memory, pc, instruction, "SOC", false);
@@ -428,10 +508,21 @@ class Program
         {
             return DisassembleRegDest(memory, pc, instruction, mnemonic);
         }
-        if (TryGetShiftMnemonic(op6, out string shiftMnemonic))
+        if ((instruction & 0xFF00) == 0x0800 ||
+            (instruction & 0xFF00) == 0x0900 ||
+            (instruction & 0xFF00) == 0x0A00 ||
+            (instruction & 0xFF00) == 0x0B00)
         {
-            int reg = (instruction >> 6) & 0xF;
-            int count = instruction & 0xF;
+            string shiftMnemonic = (instruction & 0xFF00) switch
+            {
+                0x0800 => "SRA",
+                0x0900 => "SRL",
+                0x0A00 => "SLA",
+                0x0B00 => "SRC",
+                _ => "??"
+            };
+            int reg = instruction & 0xF;
+            int count = (instruction >> 4) & 0xF;
             return new DisasmResult($"{shiftMnemonic} {FormatRegister(reg)}, {FormatHex((ushort)count)}", 1);
         }
 
@@ -529,11 +620,11 @@ class Program
         {
             return DisassembleSingleOperand(memory, pc, instruction, "ABS");
         }
-        if ((instruction & 0xFFF0) == 0x0C00)
+        if ((instruction & 0xFFF0) == 0x02A0)
         {
             return new DisasmResult($"STWP {FormatRegister(instruction & 0xF)}", 1);
         }
-        if ((instruction & 0xFFF0) == 0x0E00)
+        if ((instruction & 0xFFF0) == 0x02C0)
         {
             return new DisasmResult($"STST {FormatRegister(instruction & 0xF)}", 1);
         }
@@ -595,28 +686,12 @@ class Program
         {
             case 0x04: mnemonic = "SZC"; return true;
             case 0x05: mnemonic = "SZCB"; return true;
-            case 0x06: mnemonic = "S"; return true;
-            case 0x07: mnemonic = "SB"; return true;
-            case 0x08: mnemonic = "C"; return true;
-            case 0x09: mnemonic = "CB"; return true;
+            case 0x08: mnemonic = "COC"; return true;
+            case 0x09: mnemonic = "CZC"; return true;
             case 0x0A: mnemonic = "A"; return true;
             case 0x0B: mnemonic = "AB"; return true;
             case 0x0E: mnemonic = "MPY"; return true;
             case 0x0F: mnemonic = "DIV"; return true;
-            default:
-                mnemonic = string.Empty;
-                return false;
-        }
-    }
-
-    static bool TryGetShiftMnemonic(int op6, out string mnemonic)
-    {
-        switch (op6)
-        {
-            case 0x10: mnemonic = "SLA"; return true;
-            case 0x11: mnemonic = "SRA"; return true;
-            case 0x12: mnemonic = "SRC"; return true;
-            case 0x13: mnemonic = "SRL"; return true;
             default:
                 mnemonic = string.Empty;
                 return false;
@@ -689,7 +764,7 @@ class Program
 
     static string FormatRegister(int register)
     {
-        return register.ToString();
+        return $"R{register:D2}";
     }
 
     private readonly record struct DisasmResult(string Text, int Words);
@@ -999,7 +1074,7 @@ class Program
         var lineText = new System.Text.StringBuilder();
         for (int i = start; i < end; i++)
         {
-            string regLabel = i.ToString();
+            string regLabel = i.ToString("D2");
             if (i > start)
             {
                 lineText.Append(' ');
